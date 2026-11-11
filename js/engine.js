@@ -80,7 +80,7 @@ const R = (life, stream, ...k) => rand(life.seed, life.universe, stream, life.ag
 
 function mod(life, stream) {
   let m = 1;
-  for (const x of life.mods) if (x.stream === stream && life.age >= x.from && life.age < x.to) m *= x.mult;
+  for (const x of life.mods) if (x.stream === stream && life.age >= x.from && life.age < x.to) m *= x.table ? x.table[life.age - x.from] : x.mult;
   return m;
 }
 
@@ -486,14 +486,23 @@ export function choose(life, optionId) {
     const first = c.options[0].id;
     const pFirst = policyProb(life, c);
     const p = c.risk.option === first ? pFirst : 1 - pFirst;
-    const base = 1 / (1 + p * (c.risk.rr - 1));
+    // 위험한 쪽이 먼저 줄어 생존자 가운데 비율이 해마다 바뀌므로, 나이별로 다시 맞춘다.
+    const rr = c.risk.rr;
+    const exposed = optionId === c.risk.option;
     const from = Math.max(life.age, c.risk.fromAge || 0);
-    life.mods.push({
-      stream: 'death',
-      mult: (optionId === c.risk.option ? c.risk.rr : 1) * base,
-      from,
-      to: c.risk.years ? from + c.risk.years : 999,
-    });
+    const to = Math.min(c.risk.years ? from + c.risk.years : AGE_MAX + 1, AGE_MAX + 1);
+    const table = [];
+    let share = p;
+    for (let a = from; a < to; a++) {
+      const base = 1 / (1 + share * (rr - 1));
+      table.push((exposed ? rr : 1) * base);
+      const qa = life.world.q(life.country, life.birth.sex, life.birth.year + a, a);
+      const sE = 1 - Math.min(qa * rr * base, 0.999);
+      const sU = 1 - Math.min(qa * base, 0.999);
+      const tot = share * sE + (1 - share) * sU;
+      if (tot > 0) share = (share * sE) / tot;
+    }
+    life.mods.push({ stream: 'death', table, from, to });
   }
   life.asked[c.id] = true;
   life.choices.push({ age: life.age, id: c.id, option: optionId });
