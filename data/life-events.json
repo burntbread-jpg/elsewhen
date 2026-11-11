@@ -1,0 +1,62 @@
+{
+  "provenance": "이 파일의 값은 실제 통계표가 아니라 제작자가 정한 가정값이다. [낮음, 높음] 쌍은 발전 수준(그해 기대수명 35세=0, 85세=1) 0과 1에서의 값이고 그 사이는 직선으로 잇는다. 사망 확률, 출산율, 도시 비율, 출생아 수는 이 파일이 아니라 demography.json 의 UN·세계은행 값에서 온다.",
+  "wealthMortality": [1.3, 1.12, 1.0, 0.88, 0.72],
+  "education": {
+    "_stage": "[발전 수준 0에서의 비율, 포화 비율, 포화에 이르는 발전 수준]",
+    "enter": [0.3, 0.995, 0.55],
+    "lower": [0.25, 0.98, 0.7],
+    "upper": [0.15, 0.95, 0.85],
+    "tertiary": [0.03, 0.6, 1.0],
+    "curve": 0.8,
+    "wealthShift": [-0.9, -0.4, 0.0, 0.45, 0.9],
+    "girlPenalty": 0.9
+  },
+  "work": {
+    "homemaker": [0.55, 0.08],
+    "unemployment": 0.03,
+    "rehire": 0.6,
+    "raise": 0.04,
+    "setback": 0.02
+  },
+  "marriage": {
+    "base": 0.17,
+    "devDamp": 0.7,
+    "late": [0.014, 0.004],
+    "remarry": 0.05,
+    "divorce": [0.003, 0.013],
+    "divorceByDuration": [1.3, 0.7, 0.25]
+  },
+  "fertility": { "exposureYears": 21, "lowFertilityBoost": 0.4 },
+  "health": {
+    "illnessBase": 0.004,
+    "illnessPerAge": 0.00035,
+    "childIllnessLowDev": 0.05,
+    "accident": 0.006
+  },
+  "migration": {
+    "annual": [0.0008, 0.0004],
+    "gap": 4,
+    "dest": { "USA": 5, "DEU": 3, "JPN": 1, "KOR": 1, "BRA": 0.5, "CHN": 0.5 },
+    "city": [0.01, 0.04]
+  },
+  "causes": {
+    "bands": [0, 1, 5, 15, 50, 70],
+    "low": {
+      "0": { "neonatal": 35, "infection": 45, "malnutrition": 12, "accident": 2, "other": 6 },
+      "1": { "infection": 62, "malnutrition": 18, "accident": 8, "other": 12 },
+      "5": { "infection": 50, "accident": 22, "malnutrition": 8, "violence": 4, "other": 16 },
+      "15": { "infection": 38, "accident": 16, "violence": 9, "maternal": 12, "heart": 9, "cancer": 6, "other": 10 },
+      "50": { "heart": 30, "infection": 25, "cancer": 14, "respiratory": 10, "diabetes": 6, "accident": 6, "other": 9 },
+      "70": { "heart": 36, "infection": 18, "respiratory": 14, "cancer": 10, "diabetes": 6, "dementia": 4, "other": 12 }
+    },
+    "high": {
+      "0": { "neonatal": 55, "congenital": 22, "infection": 8, "accident": 5, "other": 10 },
+      "1": { "accident": 35, "cancer": 15, "congenital": 15, "infection": 12, "other": 23 },
+      "5": { "accident": 40, "cancer": 22, "violence": 6, "infection": 6, "other": 26 },
+      "15": { "accident": 24, "cancer": 20, "heart": 15, "violence": 8, "infection": 5, "maternal": 0.5, "other": 27.5 },
+      "50": { "cancer": 38, "heart": 28, "respiratory": 7, "diabetes": 6, "accident": 5, "infection": 4, "other": 12 },
+      "70": { "heart": 30, "cancer": 22, "dementia": 16, "respiratory": 9, "infection": 7, "diabetes": 5, "accident": 3, "other": 8 }
+    },
+    "smokingBoost": { "cancer": 1.6, "respiratory": 1.8, "heart": 1.3 }
+  }
+}

@@ -1,0 +1,212 @@
+{
+  "provenance": "선택지와 계수는 제작자가 정한 가정값이다. risk.rr 은 그 옵션을 고른 사람의 사망 위험이 고르지 않은 사람의 몇 배인지를 뜻한다. 엔진은 policy 비율로 평균이 1이 되도록 맞추므로, 전체 평균 수명은 통계표에서 벗어나지 않는다. policy 는 자동 우주가 첫 번째 옵션을 고를 확률이다.",
+  "choices": [
+    {
+      "id": "smoke-start", "area": "건강", "ages": [15, 22], "chance": 0.35,
+      "when": [["smoking", "==", false]],
+      "prompt": "또래들이 둘러앉아 담배를 권한다.",
+      "options": [
+        { "id": "accept", "label": "받아 든다", "effects": [{ "set": { "habits.smoking": true } }], "result": "그날부터 담배를 피우게 되었다." },
+        { "id": "decline", "label": "손을 젓는다", "result": "담배는 끝내 배우지 않았다." }
+      ],
+      "risk": { "option": "accept", "rr": 1.9, "fromAge": 40 },
+      "policy": { "M": 0.42, "F": 0.08 }
+    },
+    {
+      "id": "smoke-quit", "area": "건강", "ages": [35, 55], "chance": 0.2,
+      "when": [["smoking", "==", true]],
+      "prompt": "아침마다 기침이 길어진다. 담배를 끊을까.",
+      "options": [
+        { "id": "quit", "label": "끊는다", "effects": [{ "set": { "habits.smoking": false } }], "result": "몇 번의 실패 끝에 담배를 끊었다." },
+        { "id": "keep", "label": "계속 피운다", "result": "담배는 계속 곁에 있었다." }
+      ],
+      "risk": { "option": "quit", "rr": 0.62 },
+      "policy": 0.4
+    },
+    {
+      "id": "drink", "area": "건강", "ages": [20, 35], "chance": 0.2,
+      "when": [["drinking", "==", false]],
+      "prompt": "일이 끝나면 술자리가 이어진다.",
+      "options": [
+        { "id": "often", "label": "매번 어울린다", "effects": [{ "set": { "habits.drinking": true } }], "result": "술은 하루의 끝이 되었다." },
+        { "id": "rarely", "label": "가끔만 간다", "result": "술자리는 드문 일로 남았다." }
+      ],
+      "risk": { "option": "often", "rr": 1.35, "fromAge": 40 },
+      "policy": { "M": 0.3, "F": 0.1 }
+    },
+    {
+      "id": "exercise", "area": "건강", "ages": [30, 50], "chance": 0.15,
+      "when": [["exercise", "==", false]],
+      "prompt": "계단을 오르면 숨이 찬다. 몸이 예전 같지 않다.",
+      "options": [
+        { "id": "start", "label": "매일 걷기 시작한다", "effects": [{ "set": { "habits.exercise": true } }], "result": "걷는 일이 하루의 습관이 되었다." },
+        { "id": "skip", "label": "그럴 틈이 없다", "result": "바쁜 날들이 그대로 이어졌다." }
+      ],
+      "risk": { "option": "start", "rr": 0.8, "fromAge": 45 },
+      "policy": 0.3
+    },
+    {
+      "id": "checkup", "area": "건강", "ages": [45, 65], "chance": 0.15,
+      "when": [],
+      "prompt": "건강검진을 받아 보라는 권유를 받았다.",
+      "options": [
+        { "id": "go", "label": "받으러 간다", "result": "그 뒤로 몇 해마다 검진을 받았다." },
+        { "id": "skip", "label": "다음으로 미룬다", "result": "검진은 계속 다음 일이 되었다." }
+      ],
+      "risk": { "option": "go", "rr": 0.88 },
+      "policy": { "dev": [0.15, 0.65] }
+    },
+    {
+      "id": "treat", "area": "위기", "ages": [12, 80], "chance": 1,
+      "when": [["recentIll", "==", true]],
+      "prompt": "몸이 좀처럼 낫지 않는다. 병원은 멀고 돈이 든다.",
+      "options": [
+        { "id": "hospital", "label": "병원에 간다", "effects": [{ "health": 15 }], "result": "치료를 받고 조금씩 나아졌다." },
+        { "id": "endure", "label": "참고 버틴다", "result": "아픈 채로 계절이 바뀌었다." }
+      ],
+      "risk": { "option": "hospital", "rr": 0.55, "years": 3 },
+      "policy": { "dev": [0.4, 0.92] }
+    },
+    {
+      "id": "hardship", "area": "위기", "ages": [10, 16], "chance": 0.3,
+      "when": [["inSchool", "==", true], ["wealth", "<=", 2]],
+      "prompt": "집안 형편이 기울었다. 부모님은 말이 없다.",
+      "options": [
+        { "id": "stay", "label": "학교를 계속 다닌다", "result": "빈속으로 학교에 가는 날이 많았다." },
+        { "id": "work", "label": "그만두고 일을 돕는다", "effects": [{ "do": "leaveSchool" }], "result": "책 대신 일을 잡았다." }
+      ],
+      "policy": { "dev": [0.4, 0.97] }
+    },
+    {
+      "id": "lend", "area": "위기", "ages": [25, 50], "chance": 0.08,
+      "when": [["employed", "==", true]],
+      "prompt": "형제가 급히 돈을 빌려 달라고 한다.",
+      "options": [
+        { "id": "lend", "label": "빌려준다", "effects": [{ "income": -1 }], "result": "돈은 돌아오지 않았지만 형제는 남았다." },
+        { "id": "refuse", "label": "거절한다", "result": "한동안 서로 연락하지 않았다." }
+      ],
+      "policy": 0.5
+    },
+    {
+      "id": "study", "area": "학업", "ages": [12, 15], "chance": 0.5,
+      "when": [["inSchool", "==", true]],
+      "prompt": "시험이 다가온다. 친구들은 강가로 놀러 간다.",
+      "options": [
+        { "id": "study", "label": "남아서 공부한다", "effects": [{ "mod": { "stream": "edu", "mult": 1.4, "years": 8 } }], "result": "혼자 남아 책을 폈다." },
+        { "id": "play", "label": "함께 놀러 간다", "effects": [{ "mod": { "stream": "edu", "mult": 0.85, "years": 8 } }], "result": "그해 여름은 오래 기억에 남았다." }
+      ],
+      "policy": 0.5
+    },
+    {
+      "id": "tertiary", "area": "학업", "ages": [17, 17], "chance": 1,
+      "when": [["inSchool", "==", true]],
+      "prompt": "학교를 마치면 무엇을 할지 정해야 한다.",
+      "options": [
+        { "id": "go", "label": "더 공부하겠다고 말한다", "effects": [{ "flag": { "tertiary": "go" } }], "result": "대학에 가겠다는 뜻을 밝혔다." },
+        { "id": "work", "label": "돈을 벌겠다고 말한다", "effects": [{ "flag": { "tertiary": "work" } }], "result": "졸업하면 바로 일하기로 했다." }
+      ],
+      "policy": { "dev": [0.35, 0.75] }
+    },
+    {
+      "id": "night-school", "area": "학업", "ages": [22, 35], "chance": 0.15,
+      "when": [["employed", "==", true], ["eduLevel", "<=", 2]],
+      "prompt": "일을 마친 뒤 다닐 수 있는 야간 학교가 생겼다.",
+      "options": [
+        { "id": "learn", "label": "다니기로 한다", "effects": [{ "do": "eduUp" }, { "mod": { "stream": "promotion", "mult": 1.3, "years": 20 } }], "result": "졸린 눈으로 몇 해를 다녀 과정을 마쳤다." },
+        { "id": "skip", "label": "쉬는 편을 택한다", "result": "저녁은 쉬는 시간으로 남았다." }
+      ],
+      "policy": 0.2
+    },
+    {
+      "id": "city-job", "area": "일", "ages": [16, 30], "chance": 0.25,
+      "when": [["urban", "==", false], ["inSchool", "==", false]],
+      "prompt": "도시의 공장에서 사람을 구한다는 소문이 돈다.",
+      "options": [
+        { "id": "go", "label": "짐을 싸서 떠난다", "effects": [{ "do": "moveCity" }], "result": "처음 보는 도시에서 일을 시작했다." },
+        { "id": "stay", "label": "마을에 남는다", "result": "떠나는 친구들을 배웅했다." }
+      ],
+      "policy": 0.4
+    },
+    {
+      "id": "business", "area": "일", "ages": [28, 45], "chance": 0.12,
+      "when": [["employed", "==", true], ["jobType", "!=", "business"]],
+      "prompt": "모아 둔 돈으로 내 가게를 열 기회가 왔다.",
+      "options": [
+        { "id": "start", "label": "가게를 연다", "effects": [{ "do": "business" }] },
+        { "id": "pass", "label": "하던 일을 계속한다", "result": "기회는 다른 사람에게 갔다." }
+      ],
+      "policy": 0.15
+    },
+    {
+      "id": "overwork", "area": "일", "ages": [30, 45], "chance": 0.15,
+      "when": [["employed", "==", true], ["jobType", "in", ["office", "professional", "labor"]]],
+      "prompt": "책임이 큰 자리가 났다. 맡으면 집에 있는 시간이 줄어든다.",
+      "options": [
+        { "id": "take", "label": "맡는다", "effects": [{ "income": 1 }], "result": "벌이는 늘었고 귀가는 늦어졌다." },
+        { "id": "decline", "label": "사양한다", "result": "저녁은 집에서 먹었다." }
+      ],
+      "risk": { "option": "take", "rr": 1.12, "years": 15 },
+      "policy": 0.5
+    },
+    {
+      "id": "retire", "area": "일", "ages": [58, 63], "chance": 0.3,
+      "when": [["employed", "==", true]],
+      "prompt": "이제 일을 내려놓을 수도 있는 나이다.",
+      "options": [
+        { "id": "retire", "label": "일을 내려놓는다", "effects": [{ "do": "retire" }], "result": "오랜 일터를 떠났다." },
+        { "id": "work", "label": "더 일한다", "effects": [{ "flag": { "workLonger": true } }], "result": "몸이 허락하는 한 일하기로 했다." }
+      ],
+      "policy": { "dev": [0.2, 0.6] }
+    },
+    {
+      "id": "proposal", "area": "관계", "ages": [18, 32], "chance": 0.1,
+      "when": [["hasPartner", "==", false], ["inSchool", "==", false]],
+      "prompt": "오래 알고 지낸 사람이 함께 살자고 한다.",
+      "options": [
+        { "id": "accept", "label": "그러자고 한다", "effects": [{ "do": "marry" }] },
+        { "id": "wait", "label": "아직은 아니라고 한다", "effects": [{ "mod": { "stream": "marriage", "mult": 0.7, "years": 5 } }], "result": "그 사람은 다른 길로 갔다." }
+      ],
+      "policy": 0.6
+    },
+    {
+      "id": "more-children", "area": "관계", "ages": [22, 40], "chance": 0.2,
+      "when": [["hasPartner", "==", true], ["kids", ">=", 1]],
+      "prompt": "아이를 더 가질지 이야기가 나왔다.",
+      "options": [
+        { "id": "more", "label": "더 낳고 싶다", "effects": [{ "mod": { "stream": "birth", "mult": 1.5, "years": 20 } }], "result": "식구가 더 늘기를 바랐다." },
+        { "id": "stop", "label": "이만하면 됐다", "effects": [{ "mod": { "stream": "birth", "mult": 0.25, "years": 30 } }], "result": "지금 식구로 살기로 했다." }
+      ],
+      "policy": { "tfr": 3.5 }
+    },
+    {
+      "id": "care-parent", "area": "관계", "ages": [35, 60], "chance": 0.1,
+      "when": [["parentAlive", "==", true], ["employed", "==", true]],
+      "prompt": "부모님이 혼자 지내기 어려워졌다.",
+      "options": [
+        { "id": "care", "label": "모시고 산다", "effects": [{ "income": -1 }], "result": "집이 좁아졌고 식탁은 길어졌다." },
+        { "id": "money", "label": "돈을 보내 드린다", "result": "달마다 돈을 부쳤다." }
+      ],
+      "policy": { "dev": [0.75, 0.35] }
+    },
+    {
+      "id": "emigrate", "area": "이주", "ages": [20, 40], "chance": 0.04,
+      "when": [["migrated", "==", false], ["dev", "<", 0.8], ["inSchool", "==", false]],
+      "prompt": "먼 나라에서 일할 사람을 구한다고 한다.",
+      "options": [
+        { "id": "go", "label": "떠난다", "effects": [{ "do": "migrate" }] },
+        { "id": "stay", "label": "남는다", "result": "떠나지 않았다." }
+      ],
+      "policy": 0.08
+    },
+    {
+      "id": "return-home", "area": "이주", "ages": [25, 70], "chance": 0.15,
+      "when": [["migrated", "==", true], ["yearsAbroad", ">=", 5]],
+      "prompt": "고향에서 돌아오라는 편지가 왔다.",
+      "options": [
+        { "id": "return", "label": "돌아간다", "effects": [{ "do": "returnHome" }] },
+        { "id": "stay", "label": "여기 남는다", "result": "편지를 서랍에 넣어 두었다." }
+      ],
+      "policy": 0.25
+    }
+  ]
+}

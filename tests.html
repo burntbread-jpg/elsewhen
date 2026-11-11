@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ELSEWHEN 엔진 테스트</title>
+<style>
+  body { font: 14px/1.5 system-ui, sans-serif; margin: 24px; color: #1c1c1c; background: #fafaf7; }
+  table { border-collapse: collapse; width: 100%; max-width: 980px; }
+  th, td { border-bottom: 1px solid #ddd; padding: 6px 10px; text-align: left; vertical-align: top; }
+  .pass { color: #0a7a3d; font-weight: 600; }
+  .fail { color: #b3261e; font-weight: 600; }
+  pre { white-space: pre-wrap; margin: 0; font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>ELSEWHEN 엔진 테스트</h1>
+<p id="status">실행 중…</p>
+<table><thead><tr><th>번호</th><th>대상</th><th>결과</th><th>내용</th></tr></thead><tbody id="rows"></tbody></table>
+<script type="module">
+import { loadGame } from './js/load.js';
+import { createLife, drawBirth, runToEnd, policyDecide, replayDecider } from './js/engine.js';
+import { runOthers } from './js/multiverse.js';
+
+const results = [];
+const rows = document.getElementById('rows');
+function report(id, name, pass, detail) {
+  results.push({ id, name, pass, detail });
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td>${id}</td><td>${name}</td><td class="${pass ? 'pass' : 'fail'}">${pass ? '통과' : '실패'}</td><td><pre></pre></td>`;
+  tr.querySelector('pre').textContent = detail;
+  rows.appendChild(tr);
+}
+const snap = (life) => JSON.stringify({ log: life.log, death: life.death, choices: life.choices });
+const tick = () => new Promise((r) => setTimeout(r, 0));
+const N = Number(new URLSearchParams(location.search).get('n')) || 2000;
+
+try {
+  const { world, defs } = await loadGame('.');
+  const auto = (seed, universe, birth) => runToEnd(createLife(world, defs, { seed, universe, birth }), policyDecide);
+
+  // T1 결정론
+  {
+    let same = true;
+    for (let i = 0; i < 30; i++) if (snap(auto('t1-' + i, i % 7)) !== snap(auto('t1-' + i, i % 7))) same = false;
+    report('T1', '결정론', same, '시드 30개를 각각 2회 실행해 기록 전체를 비교');
+  }
+
+  // T2 출생 공유
+  {
+    const base = JSON.stringify(auto('t2', 0).birth);
+    let same = true;
+    for (let u = 1; u < 100; u++) if (JSON.stringify(createLife(world, defs, { seed: 't2', universe: u }).birth) !== base) same = false;
+    report('T2', '출생 공유', same, '한 시드의 100개 우주 출생 조건: ' + base);
+  }
+
+  // T3 우주 분산
+  {
+    let min = Infinity;
+    for (let i = 0; i < 20; i++) {
+      const lives = [auto('t3-' + i, 0), ...runOthers(world, defs, 't3-' + i)];
+      min = Math.min(min, new Set(lives.map((l) => l.death.age)).size);
+    }
+    report('T3', '우주 분산', min >= 10, `시드 20개에서 서로 다른 수명 값의 최소 개수 = ${min} (기준 10 이상)`);
+  }
+  await tick();
+
+  // T4 통계 수렴
+  {
+    const lines = [];
+    let ok = true;
+    let choiceSum = 0;
+    let choiceN = 0;
+    for (const c of world.codes) {
+      let sum = 0;
+      let expect = 0;
+      for (let i = 0; i < N; i++) {
+        const life = auto(`t4-${c}-${i}`, 1, { country: c, year: 1970 });
+        sum += life.death.age;
+        expect += world.cohortLife(c, life.birth.sex, 1970);
+        if (life.death.age >= 70) {
+          choiceSum += life.choices.length;
+          choiceN++;
+        }
+      }
+      const diff = sum / N - expect / N;
+      if (Math.abs(diff) > 1.5) ok = false;
+      lines.push(`${world.name(c)}: 모의 ${(sum / N).toFixed(2)}세, 생명표 ${(expect / N).toFixed(2)}세, 차이 ${diff >= 0 ? '+' : ''}${diff.toFixed(2)}`);
+      await tick();
+    }
+    report('T4', '통계 수렴', ok, `1970년생, 나라당 자동 우주 ${N}개 (기준 차이 1.5년 이내)\n` + lines.join('\n'));
+    report('참고', '선택지 수', choiceN > 0 && choiceSum / choiceN >= 8 && choiceSum / choiceN <= 12, `70세 이상 산 삶의 평균 선택지 수 = ${(choiceSum / choiceN).toFixed(1)} (목표 8~12)`);
+  }
+
+  // T5 출생 비율
+  {
+    const M = 100000;
+    const count = {};
+    for (let i = 0; i < M; i++) {
+      const b = drawBirth(world, 't5-' + i);
+      count[b.country] = (count[b.country] || 0) + 1;
+    }
+    let total = 0;
+    const input = {};
+    for (const c of world.codes) {
+      input[c] = 0;
+      for (let y = 1950; y <= 2000; y++) input[c] += world.births(c, y);
+      total += input[c];
+    }
+    let worst = 0;
+    const lines = world.codes.map((c) => {
+      const a = (count[c] || 0) / M * 100;
+      const b = input[c] / total * 100;
+      worst = Math.max(worst, Math.abs(a - b));
+      return `${world.name(c)}: 추첨 ${a.toFixed(2)}%, 입력 ${b.toFixed(2)}%`;
+    });
+    report('T5', '출생 비율', worst <= 0.5, `추첨 ${M}회, 최대 차이 ${worst.toFixed(2)}%p (기준 0.5%p 이내)\n` + lines.join('\n'));
+  }
+  await tick();
+
+  // T6 되감기 전반: 바꾼 선택 이전의 기록은 같다
+  {
+    let checked = 0;
+    let ok = true;
+    for (let i = 0; checked < 30 && i < 400; i++) {
+      const seed = 't6-' + i;
+      const a = auto(seed, 0);
+      if (a.choices.length < 3) continue;
+      const k = Math.floor(a.choices.length / 2);
+      const target = a.choices[k];
+      const def = defs.choices.find((c) => c.id === target.id);
+      const other = def.options.find((o) => o.id !== target.option).id;
+      const changed = a.choices.slice(0, k).concat([{ ...target, option: other }]);
+      const b = runToEnd(createLife(world, defs, { seed, universe: 0 }), replayDecider(changed, policyDecide));
+      const before = (life) => JSON.stringify(life.log.filter((e) => e.age < target.age));
+      if (before(a) !== before(b)) ok = false;
+      if (b.choices[k].option !== other) ok = false;
+      checked++;
+    }
+    report('T6', '되감기 전반', ok && checked === 30, `삶 ${checked}개에서 가운데 선택을 바꾸고 그 나이 이전 기록을 비교`);
+  }
+
+  // T7 되감기 운 유지: 효과가 없는 옵션끼리 바꾸면 선택 항목 외 전체 기록이 같다
+  {
+    const neutral = { id: 'neutral', ages: [20, 20], chance: 1, when: [], prompt: '', options: [{ id: 'a', label: 'a' }, { id: 'b', label: 'b' }], policy: 0.5 };
+    const defs2 = { choices: [neutral, ...defs.choices] };
+    const strip = (life) => JSON.stringify({ death: life.death, log: life.log.map((e) => ({ ...e, choice: e.choice && e.choice.id === 'neutral' ? null : e.choice })) });
+    let checked = 0;
+    let ok = true;
+    for (let i = 0; checked < 30 && i < 400; i++) {
+      const seed = 't7-' + i;
+      const run = (opt) => runToEnd(createLife(world, defs2, { seed, universe: 0 }), (life, c) => (c.id === 'neutral' ? opt : policyDecide(life, c)));
+      const a = run('a');
+      if (a.death.age <= 20) continue;
+      const b = run('b');
+      if (strip(a) !== strip(b)) ok = false;
+      checked++;
+    }
+    report('T7', '되감기 운 유지', ok && checked === 30, `삶 ${checked}개에서 효과 없는 선택을 바꾸고 기록 전체를 비교`);
+  }
+
+  // T10 성능
+  {
+    const t0 = performance.now();
+    const rounds = 20;
+    for (let i = 0; i < rounds; i++) runOthers(world, defs, 't10-' + i);
+    const ms = (performance.now() - t0) / rounds;
+    report('T10', '성능', ms <= 200, `자동 우주 99개 전체 계산 평균 ${ms.toFixed(1)}ms (기준 200ms 이하, 이 기기 기준)`);
+  }
+
+  document.getElementById('status').textContent = results.every((r) => r.pass) ? '모두 통과' : '실패 항목 있음';
+} catch (e) {
+  document.getElementById('status').textContent = '오류: ' + e.message;
+  results.push({ id: 'ERR', name: 'error', pass: false, detail: String(e && e.stack || e) });
+}
+window.__results = results;
+window.__done = true;
+</script>
+</body>
+</html>
