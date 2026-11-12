@@ -2,7 +2,7 @@
   "provenance": "선택지와 계수는 제작자가 정한 가정값이다. risk.rr 은 그 옵션을 고른 사람의 사망 위험이 고르지 않은 사람의 몇 배인지를 뜻한다. 엔진은 policy 비율로 평균이 1이 되도록 맞추므로, 전체 평균 수명은 통계표에서 벗어나지 않는다. policy 는 자동 우주가 첫 번째 옵션을 고를 확률이다.",
   "choices": [
     {
-      "id": "smoke-start", "area": "건강", "ages": [15, 22], "chance": 0.35,
+      "id": "smoke-start", "short": "권하는 담배", "area": "건강", "ages": [15, 22], "chance": 0.35,
       "when": [["smoking", "==", false]],
       "prompt": "또래들이 둘러앉아 담배를 권한다.",
       "options": [
@@ -68,7 +68,7 @@
       "policy": { "dev": [0.4, 0.92] }
     },
     {
-      "id": "hardship", "area": "위기", "ages": [10, 16], "chance": 0.3,
+      "id": "hardship", "short": "기운 살림", "area": "위기", "ages": [10, 16], "chance": 0.3,
       "when": [["inSchool", "==", true], ["wealth", "<=", 2]],
       "prompt": "집안 형편이 기울었다. 부모님은 말이 없다.",
       "options": [
@@ -88,7 +88,7 @@
       "policy": 0.5
     },
     {
-      "id": "study", "area": "학업", "ages": [12, 15], "chance": 0.5,
+      "id": "study", "short": "시험 전날", "area": "학업", "ages": [12, 15], "chance": 0.5,
       "when": [["inSchool", "==", true]],
       "prompt": "시험이 다가온다. 친구들은 강가로 놀러 간다.",
       "options": [
@@ -98,7 +98,7 @@
       "policy": 0.5
     },
     {
-      "id": "tertiary", "area": "학업", "ages": [17, 17], "chance": 1,
+      "id": "tertiary", "short": "졸업 뒤", "area": "학업", "ages": [17, 17], "chance": 1,
       "when": [["inSchool", "==", true]],
       "prompt": "학교를 마치면 무엇을 할지 정해야 한다.",
       "options": [
