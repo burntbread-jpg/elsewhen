@@ -8,8 +8,10 @@ export const THREADS = 100;
 export const NOW = 2026; // 프로토타입의 "올해". 엔진은 시계를 보지 않는다.
 
 /** 실 하나를 끝까지. rules 에 있는 질문은 그 답을, 없는 질문은 통계 비율대로 고른다. */
-export function runThread(world, defs, seed, universe, profile, rules = {}) {
+export function runThread(world, defs, seed, universe, profile, rules = {}, graces = []) {
   const life = createLifeFrom(world, defs, { seed, universe, profile, nowYear: NOW });
+  // 은총: 붙잡힌 동안 그 삶의 사망 위험이 줄어든다. 운(난수)은 그대로다.
+  for (const g of graces) life.mods.push({ stream: 'death', mult: g.mult, from: g.from, to: g.to });
   return runToEnd(life, (l, c) => (c.id in rules ? rules[c.id] : policyDecide(l, c)));
 }
 

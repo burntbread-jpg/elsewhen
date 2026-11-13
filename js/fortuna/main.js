@@ -111,6 +111,8 @@ const threadMaterial = new THREE.ShaderMaterial({
     varying float vEnd;
     varying float vAns;
     varying float vNow;
+    varying float vWarn;
+    varying float vVow;
     void main() {
       vec4 info = row(aThread, 0.1667);
       vec4 fate = row(aThread, 0.5);
@@ -120,6 +122,10 @@ const threadMaterial = new THREE.ShaderMaterial({
       float ahead = max(aAge - uAge, 0.0);
       p.z += info.g * 0.3 * step(uAge - 0.5, aAge) * (0.3 + 0.7 * exp(-ahead / 12.0));
       p.z += info.r * 0.05 * sin(uTime * 55.0 + aThread * 1.7);
+      // 곧 끊어질 가지는 자라는 끝이 떤다.
+      p.z += fate.b * 0.035 * sin(uTime * 38.0 + aThread * 2.1) * exp(-pow((aAge - uAge) / 2.5, 2.0));
+      vWarn = fate.b;
+      vVow = fate.a;
       vBeyond = aAge - d;
       vSnap = uAge - d;
       if (vBeyond > 0.0 && vSnap > 0.0) p.z -= vSnap * vSnap * 0.03 + vBeyond * vSnap * 0.01;
@@ -152,6 +158,8 @@ const threadMaterial = new THREE.ShaderMaterial({
     varying float vEnd;
     varying float vAns;
     varying float vNow;
+    varying float vWarn;
+    varying float vVow;
     void main() {
       // 끝난 삶의 그 뒤는 없다.
       if (vBeyond > 0.0) {
@@ -175,6 +183,9 @@ const threadMaterial = new THREE.ShaderMaterial({
       col *= mix(answerTint(vAns), answerTint(vNow), choosing * step(0.01, abs(vNow - 0.5)));
       col *= (diff + rim) * (0.30 + 0.70 * vThick) * seen;
       col *= 1.0 - 0.5 * choosing * (1.0 - step(0.01, abs(vNow - 0.5)));
+      // 서원을 건 가지는 금빛이 돈다. 곧 끊어질 가지는 자라는 끝이 달아오른다.
+      col = mix(col, col * vec3(1.35, 1.05, 0.55) + vec3(0.10, 0.06, 0.0), 0.6 * vVow * step(vAge, uAge + 0.2));
+      col += vWarn * exp(-pow((vAge - uAge) / 1.3, 2.0)) * vec3(1.0, 0.45, 0.10) * (1.0 + 0.5 * sin(uTime * 13.0 + vAng));
       float e = exp(-pow((vAge - vEnd) / 1.4, 2.0));
       col += uEmber * vDiff * e * vec3(1.0, 0.42, 0.08) * (1.5 + 0.4 * sin(uTime * 7.0 + vAng));
       gl_FragColor = vec4(col, 1.0);
@@ -280,6 +291,9 @@ const emberMaterial = new THREE.ShaderMaterial({
 
 // ---------- 고정된 물건 ----------
 
+const gold = new THREE.MeshStandardMaterial({ color: 0xe2a04a, emissive: 0xe2a04a, emissiveIntensity: 0.7, metalness: 0.5, roughness: 0.35 });
+const M4 = new THREE.Matrix4();
+
 const plateCanvas = document.createElement('canvas');
 plateCanvas.width = plateCanvas.height = 512;
 const plateTexture = new THREE.CanvasTexture(plateCanvas);
@@ -365,6 +379,12 @@ const G = {
   rowSounded: -1,
   dist: 40,
   prevEnds: null,
+  graces: [], // 가지마다 받은 은총
+  graceLeft: 3,
+  vows: [], // { i, target, at, text, state }
+  lastVow: -99,
+  vowShown: '',
+  best: 0,
 };
 
 const rOf = (age) => R0 + (age - G.A0) * G.DR;
@@ -420,6 +440,12 @@ function setup() {
   uniforms.uGoal.value = G.goal;
   G.base = G.lives.slice();
   G.alt = new Array(N).fill(null);
+  G.graces = Array.from({ length: N }, () => []);
+  G.graceLeft = world.events.grace.count;
+  G.vows = [];
+  G.lastVow = -99;
+  G.vowShown = '';
+  $('vows').innerHTML = '';
   threadData.fill(0);
   for (let i = 0; i < N; i++) threadData[T2(i)] = threadData[T2(i) + 1] = threadData[T2(i) + 2] = 0.5;
   uniforms.uAsk.value.set(1000, 1000, 1000);
@@ -604,6 +630,26 @@ function buildTree() {
     tree.add(G.embers);
   }
 
+  // 서원의 자리(고리)와 붙잡은 자리(구슬)
+  G.vowMarks = new THREE.InstancedMesh(new THREE.TorusGeometry(0.1, 0.016, 6, 24), gold, 3);
+  G.graceMarks = new THREE.InstancedMesh(new THREE.SphereGeometry(0.06, 10, 8), gold, 3);
+  G.vowMarks.frustumCulled = G.graceMarks.frustumCulled = false;
+  tree.add(G.vowMarks, G.graceMarks);
+  const graced = [];
+  for (let i = 0; i < N; i++) for (const g of G.graces[i]) graced.push({ i, age: g.from });
+  for (let k = 0; k < 3; k++) {
+    const v = G.vows[k];
+    const pv = v ? pointAt(v.i, v.target) : null;
+    M4.makeScale(v ? 1 : 0, v ? 1 : 0, v ? 1 : 0);
+    if (pv) M4.setPosition(pv.x, pv.y, pv.z + 0.05);
+    G.vowMarks.setMatrixAt(k, M4);
+    const c = graced[k];
+    const pg = c ? pointAt(c.i, c.age) : null;
+    M4.makeScale(c ? 1 : 0, c ? 1 : 0, c ? 1 : 0);
+    if (pg) M4.setPosition(pg.x, pg.y, pg.z + 0.05);
+    G.graceMarks.setMatrixAt(k, M4);
+  }
+
   G.pick = new THREE.Mesh(new THREE.CircleGeometry(ROUT + 0.4, 48), new THREE.MeshBasicMaterial({ visible: false, side: THREE.DoubleSide }));
   tree.add(G.pick);
 
@@ -623,6 +669,10 @@ function buildTree() {
     return new THREE.Vector3(rOf(age) * Math.cos(th), rOf(age) * Math.sin(th), 0);
   };
   for (let age = Math.ceil((G.A0 + 1) / 10) * 10; age <= 100; age += 10) add(String(age), 'age', edge(age, -1), 0);
+  for (const v of G.vows) {
+    const pv = pointAt(v.i, v.target);
+    add(`№${v.i + 1}의 서원`, 'vow', new THREE.Vector3(pv.x, pv.y + 0.22, pv.z + 0.12), v.at);
+  }
   // 갈라진 까닭: 가지를 조금 따라간 자리에 적고, 서로 겹치는 것은 큰 가지의 것만 남긴다.
   const placed = [];
   for (const s of [...G.lay.splits].sort((a, b) => b.size - a.size || a.k - b.k)) {
@@ -749,6 +799,8 @@ function startGrowing() {
   $('ledgerCount').textContent = '0';
   $('ledger').classList.add('show');
   $('count').classList.add('show');
+  $('grace').classList.add('show');
+  $('vows').classList.add('show');
   sound.play('gayageum_a2', { gain: 0.4, rate: 0.75, duration: 6 });
 }
 
@@ -759,9 +811,13 @@ function closeBook() {
   const earlier = changed.filter((i) => G.lives[i].death.age < G.base[i].death.age).length;
   $('bookKicker').textContent = '고쳐 쓴 명부';
   const score = later - earlier;
+  const used = G.graces.filter((g) => g.length).length;
+  const held = G.graces.filter((g, i) => g.length && G.lives[i].death.age > G.base[i].death.age).length;
+  const kept = G.vows.filter((v) => v.state === 'kept').length;
+  const graceLine = `<br>붙잡은 가지 <b>${used}</b>, 그 가운데 더 산 가지 <b>${held}</b>. 지킨 서원 <b>${kept}</b>, 지키지 못한 서원 <b>${G.vows.length - kept}</b>.`;
   const years = changed.reduce((sum, i) => sum + G.lives[i].death.age - G.base[i].death.age, 0);
   $('bookTitle').textContent = score >= G.target ? '내기를 지켰다' : `${G.target - score}줄이 모자랐다`;
-  $('bookSay').innerHTML = `더 늦게 고쳐 쓴 줄 <b>${later}</b>, 더 일찍 끝나게 한 줄 <b>${earlier}</b> · 내기 ${G.target}줄.<br>네 손이 100개의 삶에 ${years >= 0 ? '더한' : '덜어 낸'} 햇수는 <b>${Math.abs(years)}년</b>이다. 나머지 ${N - changed.length}줄은 어떤 답으로도 달라지지 않았다.`;
+  $('bookSay').innerHTML = `더 늦게 고쳐 쓴 줄 <b>${later}</b>, 더 일찍 끝나게 한 줄 <b>${earlier}</b> · 내기 ${G.target}줄.<br>네 손이 100개의 삶에 ${years >= 0 ? '더한' : '덜어 낸'} 햇수는 <b>${Math.abs(years)}년</b>이다. 나머지 ${N - changed.length}줄은 그대로다.${graceLine}`;
   changed.sort((a, b) => G.base[a].death.age - G.base[b].death.age);
   $('bookList').innerHTML = changed.length
     ? changed.map((i) => `<li class="${G.lives[i].death.age < G.base[i].death.age ? 'late' : ''}"><i>№${i + 1}</i><s>${lineOf(G.base[i])}</s><br><em>${lineOf(G.lives[i])}</em></li>`).join('')
@@ -786,6 +842,8 @@ $('bookAgain').addEventListener('click', () => {
   $('book').classList.remove('show');
   $('ledger').classList.remove('show');
   $('count').classList.remove('show');
+  $('grace').classList.remove('show');
+  $('vows').classList.remove('show');
   $('form').classList.remove('gone');
   $('react').textContent = '';
   G.seed = newSeed();
@@ -798,16 +856,77 @@ $('bookAgain').addEventListener('click', () => {
 
 function inscribe(i) {
   const li = document.createElement('li');
-  li.innerHTML = `<b>${G.lives[i].death.year}</b>${G.lives[i].death.age}세 · ${CAUSE_LABEL[G.lives[i].death.cause]}`;
+  const mark = (G.graces[i].length ? ' · 붙잡았던 가지' : '') + (G.vows.some((v) => v.i === i) ? ' · 서원' : '');
+  li.innerHTML = `<b>${G.lives[i].death.year}</b>${G.lives[i].death.age}세 · ${CAUSE_LABEL[G.lives[i].death.cause]}${mark}`;
   li.onclick = () => pluckThread(i, 0.5);
   const list = $('ledgerList');
   list.prepend(li);
   while (list.children.length > 40) list.lastChild.remove();
 }
 
+// ---------- 은총과 서원 ----------
+
+/**
+ * 붙잡는 손. 그 가지의 삶이 몇 해 동안 덜 위태로워진다. 한 판에 세 번뿐이다.
+ * 운(난수)은 그대로이므로, 그 자리가 너무 가늘면 붙잡아도 끊어진다.
+ */
+function grant(i) {
+  if (G.graceLeft <= 0 || !aliveAt(i, G.age) || G.graces[i].length) return false;
+  const g = G.world.events.grace;
+  const from = Math.floor(G.age);
+  G.graces[i].push({ from, to: from + g.years, mult: g.mult });
+  G.graceLeft--;
+  G.lives[i] = runThread(G.world, G.defs, G.seed, i, profile, G.rules[i], G.graces[i]);
+  G.alt[i] = null;
+  G.dirty = true;
+  regrow();
+  threadData[T0(i)] = 1;
+  sound.play('gayageum_a2', { gain: 0.5, rate: 2, duration: 3 });
+  return true;
+}
+
+/**
+ * 서원. 아이가 태어나거나 병을 얻은 해에, 지금대로라면 그 바람에 닿지 못할 가지가 바람을 건다.
+ * 바람의 내용은 그 가지에 실제로 일어난 일에서 나온다. 한 판에 세 번까지다.
+ */
+function seekVows(from, to) {
+  for (let a = Math.floor(from) + 1; a <= Math.floor(to); a++) {
+    if (G.vows.length >= 3 || a - G.lastVow < 4) continue;
+    for (let i = 0; i < N; i++) {
+      if (!aliveAt(i, a) || G.vows.some((v) => v.i === i)) continue;
+      const entry = G.lives[i].log.find((e) => e.age === a);
+      const ev = entry && entry.events.find((e) => e.t === 'child' || e.t === 'illness');
+      if (!ev) continue;
+      const target = ev.t === 'child' ? a + 20 : a + 10;
+      const d = deathOf(i);
+      if (d >= target || target - d > 7 || target > 100) continue;
+      G.vows.push({ i, target, at: a, text: ev.t === 'child' ? '아이가 스무 살이 될 때까지' : '이 병을 넘기고 십 년만', state: 'open' });
+      G.lastVow = a;
+      G.dirty = true;
+      sound.play('harp_c5', { gain: 0.5, rate: 0.75, duration: 3 });
+      break;
+    }
+  }
+  if (G.dirty && G.state !== 'ask') regrow();
+}
+
+function updateVows() {
+  for (const v of G.vows) {
+    if (v.state !== 'open') continue;
+    const d = deathOf(v.i);
+    if (d < v.target && d + 0.5 <= G.age) v.state = 'broken';
+    else if (d >= v.target && G.age >= v.target) v.state = 'kept';
+  }
+  const shown = G.vows.map((v) => v.i + v.state).join() + '|' + G.graceLeft;
+  if (shown === G.vowShown) return;
+  G.vowShown = shown;
+  $('vows').innerHTML = G.vows.map((v) => `<li class="${v.state}"><b>№${v.i + 1}</b>${v.text} · ${v.target}세</li>`).join('');
+  const total = G.world.events.grace.count;
+  $('grace').innerHTML = '은총' + Array.from({ length: total }, (_, k) => `<i class="${k < G.graceLeft ? 'on' : ''}"></i>`).join('');
+}
+
 // ---------- 진행 ----------
 
-const M4 = new THREE.Matrix4();
 function updateKnots() {
   for (let i = 0; i < N; i++) {
     const d = deathOf(i) + 0.5;
@@ -847,6 +966,7 @@ function passed(from, to) {
     }
   }
   if (n) $('ledgerCount').textContent = String(N - aliveCount());
+  seekVows(from, to);
 }
 
 function aliveCount() {
@@ -872,7 +992,7 @@ function openQuestion() {
     threadData[T2(i) + slot] = G.meets[i] ? G.ans[i] : 0.5;
     if (!G.meets[i]) continue;
     G.rules[i][q.def.id] = q.def.options[G.ans[i]].id;
-    G.alt[i] = runThread(G.world, G.defs, G.seed, i, profile, { ...G.rules[i], [q.def.id]: q.def.options[1 - G.ans[i]].id });
+    G.alt[i] = runThread(G.world, G.defs, G.seed, i, profile, { ...G.rules[i], [q.def.id]: q.def.options[1 - G.ans[i]].id }, G.graces[i]);
   }
   writeFates();
   uniforms.uSlot.value = slot;
@@ -983,8 +1103,13 @@ function frame(now) {
     threadData[k] = threadData[k] > 0.002 ? threadData[k] * Math.pow(0.04, dt) : 0;
     const target = asking && G.meets[i] ? (G.ans[i] === 0 ? 1 : -0.4) : 0;
     threadData[k + 1] += (target - threadData[k + 1]) * Math.min(1, dt * (asking ? 9 : 2.2));
+    const left = deathOf(i) + 0.5 - G.age;
+    threadData[T1(i) + 2] = G.state === 'grow' && left > 0 && left < 3 && !G.graces[i].length ? 1 : 0;
+    threadData[T1(i) + 3] = 0;
   }
+  for (const v of G.vows) if (v.state !== 'broken') threadData[T1(v.i) + 3] = 1;
   threadTex.needsUpdate = true;
+  updateVows();
 
   uniforms.uEmber.value += ((asking ? 1 : 0) - uniforms.uEmber.value) * Math.min(1, dt * (asking ? 3 : 1.2));
   const foresee = G.state === 'form' ? 1 : asking ? 1 : 0;
@@ -1046,6 +1171,7 @@ function frame(now) {
     $('count').innerHTML = `늦춘 줄<b>${w.later}</b>${w.earlier ? `앞당긴 줄 ${w.earlier} · ` : ''}내기 ${G.target}`;
   }
   if (G.state === 'grow' && !G.everHeld) hint('길게 눌러 나무를 기른다');
+  else if (G.state === 'grow' && G.graceLeft > 0 && !G.holding && threadData.some((x, n) => n >= N * 4 && n < N * 8 && n % 4 === 2 && x > 0.5)) hint('끝이 달아오른 가지를 누르면 붙잡는다 · 은총은 세 번뿐이다');
   else if (asking) hint('가지를 훑어 답을 바꾼다 · 불씨는 그 삶이 끝날 자리다 · 가만히 눌러 계속 기른다');
   else hint('');
 
@@ -1057,7 +1183,7 @@ function frame(now) {
 
 const ray = new THREE.Raycaster();
 const ptr = new THREE.Vector2();
-const drag = { on: false, x: 0, y: 0, moved: 0, last: -1, paint: -1 };
+const drag = { on: false, x: 0, y: 0, moved: 0, last: -1, paint: -1, t0: 0 };
 const hold = { timer: 0 };
 
 /** 손가락 아래의 실. only 가 있으면 그 조건에 맞는 실 가운데서 고른다. */
@@ -1101,6 +1227,7 @@ canvas.addEventListener('pointerdown', (e) => {
   drag.moved = 0;
   drag.last = -1;
   drag.paint = -1;
+  drag.t0 = performance.now();
   if (G.state === 'grow') {
     G.holding = true;
     G.everHeld = true;
@@ -1138,6 +1265,12 @@ function release(e) {
   drag.on = false;
   G.holding = false;
   clearTimeout(hold.timer);
+  // 짧게 누르면 붙잡는다. 달아오른 가지가 가까이 있으면 그 가지를 먼저 잡는다.
+  if (G.state === 'grow' && drag.moved < 8 && performance.now() - drag.t0 < 300 && G.graceLeft > 0) {
+    let i = threadAt(e, (j) => aliveAt(j, G.age) && threadData[T1(j) + 2] > 0.5);
+    if (i < 0) i = threadAt(e, (j) => aliveAt(j, G.age));
+    if (i >= 0) grant(i);
+  }
   if (G.state === 'ask') regrow();
   if (G.state === 'end' && drag.moved < 8) {
     const i = threadAt(e);
@@ -1182,7 +1315,7 @@ window.addEventListener('resize', resize);
 resize();
 
 // 확인용
-window.__fortuna = { G, profile, setup, commit, setAnswer, regrow, closeBook, uniforms, sound, frame };
+window.__fortuna = { G, profile, setup, commit, setAnswer, regrow, closeBook, grant, uniforms, sound, frame };
 
 loadGame('.')
   .then(({ world, defs }) => {
