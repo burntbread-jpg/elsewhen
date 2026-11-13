@@ -936,7 +936,7 @@ function hint(text) {
 
 let last = performance.now();
 function frame(now) {
-  const dt = Math.min((now - last) / 1000, 0.05);
+  const dt = Math.min(Math.max((now - last) / 1000, 0), 0.05);
   last = now;
   uniforms.uTime.value = now / 1000;
 

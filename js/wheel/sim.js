@@ -30,16 +30,17 @@ export function planQuestions(defs, lives, fromAge, max = 3) {
   const cands = [];
   for (const def of defs.choices) {
     if (def.ages[1] <= fromAge) continue;
-    const askAge = Math.max(def.ages[0], fromAge + 1);
+    const askAge = Math.max(def.ages[0], fromAge + 3);
     const met = lives.filter((l) => l.choices.some((c) => c.id === def.id && c.age >= askAge)).length;
     if (met < 12) continue;
-    cands.push({ def, askAge, met, score: met + (def.risk ? 40 : 0) });
+    // 수명에 영향이 있는 질문을 먼저 고른다. 영향이 없는 질문만 물으면 명부를 고칠 수 없다.
+    cands.push({ def, askAge, met, score: def.risk ? met + 100 : met * 0.5 });
   }
   cands.sort((a, b) => b.score - a.score);
   const picked = [];
   for (const c of cands) {
     if (picked.length >= max) break;
-    if (picked.some((p) => Math.abs(p.askAge - c.askAge) < 3)) continue;
+    if (picked.some((p) => Math.abs(p.askAge - c.askAge) < 2)) continue;
     picked.push(c);
   }
   return picked.sort((a, b) => a.askAge - b.askAge);
