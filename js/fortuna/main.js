@@ -123,7 +123,7 @@ const threadMaterial = new THREE.ShaderMaterial({
       p.z += info.g * 0.3 * step(uAge - 0.5, aAge) * (0.3 + 0.7 * exp(-ahead / 12.0));
       p.z += info.r * 0.05 * sin(uTime * 55.0 + aThread * 1.7);
       // 곧 끊어질 가지는 자라는 끝이 떤다.
-      p.z += fate.b * 0.035 * sin(uTime * 38.0 + aThread * 2.1) * exp(-pow((aAge - uAge) / 2.5, 2.0));
+      p.z += fate.b * 0.05 * sin(uTime * (14.0 + 40.0 * fate.b) + aThread * 2.1) * exp(-pow((aAge - uAge) / 2.5, 2.0));
       vWarn = fate.b;
       vVow = fate.a;
       vBeyond = aAge - d;
@@ -185,7 +185,9 @@ const threadMaterial = new THREE.ShaderMaterial({
       col *= 1.0 - 0.5 * choosing * (1.0 - step(0.01, abs(vNow - 0.5)));
       // 서원을 건 가지는 금빛이 돈다. 곧 끊어질 가지는 자라는 끝이 달아오른다.
       col = mix(col, col * vec3(1.35, 1.05, 0.55) + vec3(0.10, 0.06, 0.0), 0.6 * vVow * step(vAge, uAge + 0.2));
-      col += vWarn * exp(-pow((vAge - uAge) / 1.3, 2.0)) * vec3(1.0, 0.45, 0.10) * (1.0 + 0.5 * sin(uTime * 13.0 + vAng));
+      // 잔잔한 금빛 = 아슬아슬하게 모자란 운, 거친 붉은빛 = 가망 없는 운
+      float tip = step(0.01, vWarn) * exp(-pow((vAge - uAge) / 1.3, 2.0));
+      col += tip * mix(vec3(1.0, 0.78, 0.30), vec3(1.0, 0.16, 0.06), vWarn) * (1.0 + 0.8 * vWarn * sin(uTime * (5.0 + 24.0 * vWarn) + vAng));
       float e = exp(-pow((vAge - vEnd) / 1.4, 2.0));
       col += uEmber * vDiff * e * vec3(1.0, 0.42, 0.08) * (1.5 + 0.4 * sin(uTime * 7.0 + vAng));
       gl_FragColor = vec4(col, 1.0);
@@ -285,6 +287,36 @@ const emberMaterial = new THREE.ShaderMaterial({
       float r = length(gl_PointCoord - 0.5) * 2.0;
       float a = exp(-r * r * 5.0) * vOn * uEmber;
       gl_FragColor = vec4(vec3(1.0, 0.46, 0.12) * a, a);
+    }
+  `,
+});
+
+// 달아오른 끝의 빛무리: 금빛으로 잔잔하면 붙잡을 만하고, 붉게 거칠면 가망이 없다.
+const warnMaterial = new THREE.ShaderMaterial({
+  uniforms: emberUniforms,
+  transparent: true,
+  depthWrite: false,
+  depthTest: false,
+  blending: THREE.AdditiveBlending,
+  vertexShader: /* glsl */ `
+    attribute float aOn;
+    uniform float uPx;
+    varying float vOn;
+    void main() {
+      vOn = aOn;
+      vec4 mv = modelViewMatrix * vec4(position, 1.0);
+      gl_PointSize = (0.55 + 0.35 * aOn) * step(0.01, aOn) * uPx / -mv.z;
+      gl_Position = projectionMatrix * mv;
+    }
+  `,
+  fragmentShader: /* glsl */ `
+    uniform float uTime;
+    varying float vOn;
+    void main() {
+      float r = length(gl_PointCoord - 0.5) * 2.0;
+      float pulse = 0.72 + 0.28 * sin(uTime * (3.0 + 28.0 * vOn));
+      float a = exp(-r * r * 4.5) * pulse;
+      gl_FragColor = vec4(mix(vec3(1.0, 0.80, 0.34), vec3(1.0, 0.14, 0.05), vOn) * a, a);
     }
   `,
 });
@@ -442,6 +474,7 @@ function setup() {
   G.alt = new Array(N).fill(null);
   G.graces = Array.from({ length: N }, () => []);
   G.graceLeft = world.events.grace.count;
+  perilCache.clear();
   G.vows = [];
   G.lastVow = -99;
   G.vowShown = '';
@@ -628,6 +661,15 @@ function buildTree() {
     G.embers = new THREE.Points(g, emberMaterial);
     G.embers.frustumCulled = false;
     tree.add(G.embers);
+  }
+
+  {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 3), 3));
+    g.setAttribute('aOn', new THREE.BufferAttribute(new Float32Array(N), 1));
+    G.warns = new THREE.Points(g, warnMaterial);
+    G.warns.frustumCulled = false;
+    tree.add(G.warns);
   }
 
   // 서원의 자리(고리)와 붙잡은 자리(구슬)
@@ -874,7 +916,7 @@ function grant(i) {
   if (G.graceLeft <= 0 || !aliveAt(i, G.age) || G.graces[i].length) return false;
   const g = G.world.events.grace;
   const from = Math.floor(G.age);
-  G.graces[i].push({ from, to: from + g.years, mult: g.mult });
+  G.graces[i].push({ from, to: from + g.years + 1, mult: g.mult }); // 달아오르기 시작한 해부터 끊어질 해까지 덮는다
   G.graceLeft--;
   G.lives[i] = runThread(G.world, G.defs, G.seed, i, profile, G.rules[i], G.graces[i]);
   G.alt[i] = null;
@@ -883,6 +925,29 @@ function grant(i) {
   threadData[T0(i)] = 1;
   sound.play('gayageum_a2', { gain: 0.5, rate: 2, duration: 3 });
   return true;
+}
+
+/**
+ * 그 가지가 얼마나 가망 없는가 (0.15 = 아슬아슬하게 모자란 운 … 1 = 가망 없음).
+ * 사망 위험을 0.9배, 0.7배, 0.5배, 0.3배로 낮춰 살아 보고, 처음 살아남는 자리를 본다.
+ * 은총은 0.7배이므로 앞의 두 단계만 붙잡아서 살릴 수 있다. 화면에는 떨림의 세기로만 드러난다.
+ */
+const perilCache = new Map();
+function peril(i) {
+  const d = deathOf(i);
+  const key = `${i}:${d}:${G.lives[i].choices.length}`;
+  if (perilCache.has(key)) return perilCache.get(key);
+  const from = Math.floor(G.age);
+  const years = G.world.events.grace.years;
+  let level = 4;
+  [0.9, 0.7, 0.5, 0.3].some((mult, n) => {
+    const life = runThread(G.world, G.defs, G.seed, i, profile, G.rules[i], [{ from, to: from + years + 1, mult }]);
+    if (life.death.age > d) level = n;
+    return life.death.age > d;
+  });
+  const value = [0.15, 0.4, 0.65, 0.85, 1][level];
+  perilCache.set(key, value);
+  return value;
 }
 
 /**
@@ -1104,7 +1169,7 @@ function frame(now) {
     const target = asking && G.meets[i] ? (G.ans[i] === 0 ? 1 : -0.4) : 0;
     threadData[k + 1] += (target - threadData[k + 1]) * Math.min(1, dt * (asking ? 9 : 2.2));
     const left = deathOf(i) + 0.5 - G.age;
-    threadData[T1(i) + 2] = G.state === 'grow' && left > 0 && left < 3 && !G.graces[i].length ? 1 : 0;
+    threadData[T1(i) + 2] = G.state === 'grow' && left > 0 && left < 3 && !G.graces[i].length ? peril(i) : 0;
     threadData[T1(i) + 3] = 0;
   }
   for (const v of G.vows) if (v.state !== 'broken') threadData[T1(v.i) + 3] = 1;
@@ -1123,6 +1188,23 @@ function frame(now) {
       pos.array[i * 3] += (p.x - pos.array[i * 3]) * Math.min(1, dt * 7);
       pos.array[i * 3 + 1] += (p.y - pos.array[i * 3 + 1]) * Math.min(1, dt * 7);
       pos.array[i * 3 + 2] = p.z + 0.08;
+    }
+    pos.needsUpdate = true;
+    on.needsUpdate = true;
+  }
+
+  if (G.warns) {
+    const pos = G.warns.geometry.attributes.position;
+    const on = G.warns.geometry.attributes.aOn;
+    for (let i = 0; i < N; i++) {
+      const w = threadData[T1(i) + 2];
+      on.array[i] = w;
+      if (w > 0.01) {
+        const p = pointAt(i, G.age);
+        pos.array[i * 3] = p.x;
+        pos.array[i * 3 + 1] = p.y;
+        pos.array[i * 3 + 2] = p.z + 0.1;
+      }
     }
     pos.needsUpdate = true;
     on.needsUpdate = true;
@@ -1171,7 +1253,7 @@ function frame(now) {
     $('count').innerHTML = `늦춘 줄<b>${w.later}</b>${w.earlier ? `앞당긴 줄 ${w.earlier} · ` : ''}내기 ${G.target}`;
   }
   if (G.state === 'grow' && !G.everHeld) hint('길게 눌러 나무를 기른다');
-  else if (G.state === 'grow' && G.graceLeft > 0 && !G.holding && threadData.some((x, n) => n >= N * 4 && n < N * 8 && n % 4 === 2 && x > 0.5)) hint('끝이 달아오른 가지를 누르면 붙잡는다 · 은총은 세 번뿐이다');
+  else if (G.state === 'grow' && G.graceLeft > 0 && !G.holding && threadData.some((x, n) => n >= N * 4 && n < N * 8 && n % 4 === 2 && x > 0.01)) hint('끝이 달아오른 가지를 누르면 붙잡는다 · 잔잔히 떠는 가지일수록 버틴다 · 세 번뿐이다');
   else if (asking) hint('가지를 훑어 답을 바꾼다 · 불씨는 그 삶이 끝날 자리다 · 가만히 눌러 계속 기른다');
   else hint('');
 
@@ -1267,7 +1349,7 @@ function release(e) {
   clearTimeout(hold.timer);
   // 짧게 누르면 붙잡는다. 달아오른 가지가 가까이 있으면 그 가지를 먼저 잡는다.
   if (G.state === 'grow' && drag.moved < 8 && performance.now() - drag.t0 < 300 && G.graceLeft > 0) {
-    let i = threadAt(e, (j) => aliveAt(j, G.age) && threadData[T1(j) + 2] > 0.5);
+    let i = threadAt(e, (j) => aliveAt(j, G.age) && threadData[T1(j) + 2] > 0.01);
     if (i < 0) i = threadAt(e, (j) => aliveAt(j, G.age));
     if (i >= 0) grant(i);
   }
