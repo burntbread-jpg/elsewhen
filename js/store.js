@@ -22,8 +22,8 @@ function write(key, value) {
   }
 }
 
-export function saveCurrent(life, settings) {
-  write(CURRENT, { v: FORMAT, world: life.world.id, seed: life.seed, choices: life.choices, age: life.age, settings });
+export function saveCurrent(life, settings, branch = null) {
+  write(CURRENT, { v: FORMAT, world: life.world.id, seed: life.seed, choices: life.choices, age: life.age, settings, branch });
 }
 
 export function loadCurrent() {
@@ -43,6 +43,19 @@ export function addFinished(life, line) {
   const list = loadFinished();
   list.unshift({ v: FORMAT, world: life.world.id, seed: life.seed, choices: life.choices, line });
   write(FINISHED, list.slice(0, KEEP));
+}
+
+export function findFinished(seed) {
+  return loadFinished().find((x) => x.seed === seed) || null;
+}
+
+/** 되감아 산 삶을 원래 삶의 기록에 분기로 붙인다. 한 삶에 한 번뿐이다. */
+export function setRewind(seed, choices) {
+  const list = loadFinished();
+  const rec = list.find((x) => x.seed === seed);
+  if (!rec) return;
+  rec.rewind = { choices };
+  write(FINISHED, list);
 }
 
 export function loadFinished() {

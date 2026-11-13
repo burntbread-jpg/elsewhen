@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d0c0a">
+<title>ELSEWHEN</title>
+<style>
+  :root { --ink: #ece4d2; --soft: #a39a86; --dim: #6b6558; --amber: #e2a04a; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; background: #0d0c0a; color: var(--ink); overflow: hidden; }
+  body { font: 15px/1.5 "Noto Serif KR", "Nanum Myeongjo", "AppleMyungjo", "Batang", Georgia, serif; -webkit-user-select: none; user-select: none; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  .vignette { position: fixed; inset: 0; pointer-events: none; background: radial-gradient(ellipse at 50% 42%, rgba(13,12,10,0) 45%, rgba(13,12,10,0.78) 100%); }
+  #hud { position: fixed; inset: 0; pointer-events: none; }
+  #title { position: absolute; left: 0; right: 0; bottom: 14vh; text-align: center; transition: opacity 1.2s; }
+  #title h1 { margin: 0; font-size: 30px; font-weight: 500; letter-spacing: 0.34em; padding-left: 0.34em; }
+  #title h1 span { color: var(--amber); }
+  #title p { margin: 14px 0 0; font-size: 13px; color: var(--soft); letter-spacing: 0.2em; }
+  #alive { position: absolute; left: 20px; bottom: 18px; font-size: 13px; color: var(--dim); font-variant-numeric: tabular-nums; letter-spacing: 0.08em; transition: opacity 1s; opacity: 0; }
+  #ask { position: absolute; inset: 0; opacity: 0; transition: opacity 0.9s; }
+  #ask span { position: absolute; left: 0; right: 0; text-align: center; font-size: 18px; letter-spacing: 0.1em; text-shadow: 0 0 18px #0d0c0a, 0 0 6px #0d0c0a; transition: color 0.2s, transform 0.2s; }
+  #ask #optA { top: 17vh; }
+  #ask #optB { bottom: 13vh; }
+  #ask span.on { color: var(--amber); transform: scale(1.08); }
+  #ask em { position: absolute; left: 0; right: 0; top: 12.5vh; text-align: center; font-style: normal; font-size: 14px; color: var(--ink); opacity: 0.8; letter-spacing: 0.3em; text-shadow: 0 0 12px #0d0c0a, 0 0 4px #0d0c0a; }
+  #face { position: absolute; left: 0; right: 0; bottom: 0; padding: 90px 0 5vh; text-align: center; opacity: 0; transition: opacity 1.2s; background: linear-gradient(to bottom, rgba(13,12,10,0), rgba(13,12,10,0.9) 55%); }
+  #face p { margin: 0; text-shadow: 0 0 14px #0d0c0a, 0 0 4px #0d0c0a; }
+  #faceLine { font-size: 19px; letter-spacing: 0.1em; }
+  #faceSub { font-size: 13px; color: var(--soft); margin-top: 6px !important; font-variant-numeric: tabular-nums; letter-spacing: 0.06em; }
+  #again { pointer-events: auto; margin-top: 16px; padding: 8px 20px; font: inherit; font-size: 13px; letter-spacing: 0.2em; color: var(--soft); background: transparent; border: 1px solid #3a352c; border-radius: 999px; cursor: pointer; }
+  #tag { position: absolute; transform: translate(-50%, -150%); font-size: 13px; padding: 4px 10px; background: rgba(13,12,10,0.82); border: 1px solid #3a352c; border-radius: 4px; white-space: nowrap; opacity: 0; transition: opacity 0.3s; font-variant-numeric: tabular-nums; }
+  #hint2 { position: absolute; left: 0; right: 0; bottom: 6vh; text-align: center; font-size: 13px; color: var(--soft); letter-spacing: 0.18em; opacity: 0; transition: opacity 0.9s; text-shadow: 0 0 12px #0d0c0a, 0 0 4px #0d0c0a; }
+  .show { opacity: 1 !important; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="vignette"></div>
+<div id="hud">
+  <div id="title"><h1>ELSE<span>WHEN</span></h1><p id="hint">불러오는 중</p></div>
+  <div id="alive"></div>
+  <div id="ask"><span id="optA"></span><em id="qword"></em><span id="optB"></span></div>
+  <div id="face"><p id="faceLine"></p><p id="faceSub"></p><button id="again">다시 짜기</button></div>
+  <div id="tag"></div>
+  <div id="hint2"></div>
+</div>
+<script type="module" src="js/loom/main.js"></script>
+</body>
+</html>

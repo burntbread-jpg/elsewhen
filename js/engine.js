@@ -80,7 +80,7 @@ const R = (life, stream, ...k) => rand(life.seed, life.universe, stream, life.ag
 
 function mod(life, stream) {
   let m = 1;
-  for (const x of life.mods) if (x.stream === stream && life.age >= x.from && life.age < x.to) m *= x.mult;
+  for (const x of life.mods) if (x.stream === stream && life.age >= x.from && life.age < x.to) m *= x.table ? x.table[life.age - x.from] : x.mult;
   return m;
 }
 
@@ -486,14 +486,23 @@ export function choose(life, optionId) {
     const first = c.options[0].id;
     const pFirst = policyProb(life, c);
     const p = c.risk.option === first ? pFirst : 1 - pFirst;
-    const base = 1 / (1 + p * (c.risk.rr - 1));
+    // 위험한 쪽이 먼저 줄어 생존자 가운데 비율이 해마다 바뀌므로, 나이별로 다시 맞춘다.
+    const rr = c.risk.rr;
+    const exposed = optionId === c.risk.option;
     const from = Math.max(life.age, c.risk.fromAge || 0);
-    life.mods.push({
-      stream: 'death',
-      mult: (optionId === c.risk.option ? c.risk.rr : 1) * base,
-      from,
-      to: c.risk.years ? from + c.risk.years : 999,
-    });
+    const to = Math.min(c.risk.years ? from + c.risk.years : AGE_MAX + 1, AGE_MAX + 1);
+    const table = [];
+    let share = p;
+    for (let a = from; a < to; a++) {
+      const base = 1 / (1 + share * (rr - 1));
+      table.push((exposed ? rr : 1) * base);
+      const qa = life.world.q(life.country, life.birth.sex, life.birth.year + a, a);
+      const sE = 1 - Math.min(qa * rr * base, 0.999);
+      const sU = 1 - Math.min(qa * base, 0.999);
+      const tot = share * sE + (1 - share) * sU;
+      if (tot > 0) share = (share * sE) / tot;
+    }
+    life.mods.push({ stream: 'death', table, from, to });
   }
   life.asked[c.id] = true;
   life.choices.push({ age: life.age, id: c.id, option: optionId });
@@ -562,5 +571,63 @@ export function runToEnd(life, decide, untilAge = Infinity) {
       choose(life, opt);
     }
   }
+  return life;
+}
+
+// ---------- 지금의 나에서 시작하기 ----------
+
+/**
+ * 사망 위험 하나를 더한다. 해당하는 사람의 위험이 rr 배이되, 그런 사람의 비율이 share 인
+ * 집단 전체의 평균은 통계표와 같게 나이별로 맞춘다. (choose 의 위험 보정과 같은 계산이다.)
+ */
+export function addRisk(life, rr, share, exposed, from = life.age, to = AGE_MAX + 1) {
+  const table = [];
+  let p = share;
+  for (let a = from; a < to; a++) {
+    const base = 1 / (1 + p * (rr - 1));
+    table.push((exposed ? rr : 1) * base);
+    const qa = life.world.q(life.country, life.birth.sex, life.birth.year + a, a);
+    const sE = 1 - Math.min(qa * rr * base, 0.999);
+    const sU = 1 - Math.min(qa * base, 0.999);
+    const tot = p * sE + (1 - p) * sU;
+    if (tot > 0) p = (p * sE) / tot;
+  }
+  life.mods.push({ stream: 'death', table, from, to });
+}
+
+/**
+ * 출생이 아니라 지금의 상태에서 시작하는 삶. profile 은 사람이 직접 적은 값이다.
+ * 과거는 정해져 있으므로 기록은 비어 있고, 첫 틱은 내년이다.
+ */
+export function createLifeFrom(world, defs, { seed, universe = 0, profile, nowYear }) {
+  const p = profile;
+  const age = nowYear - p.birthYear;
+  const life = createLife(world, defs, {
+    seed,
+    universe,
+    birth: { country: p.country, year: p.birthYear, sex: p.sex, urban: true, wealth: p.wealth, motherAge: 27, fatherAge: 30, share: 0 },
+  });
+  life.age = age;
+  life.year = nowYear;
+  life.startAge = age;
+  life.edu = { level: p.edu, inSchool: false };
+  life.job = { type: p.job || null, employed: !!p.job && p.job !== 'home', retired: false };
+  if (p.partner) {
+    life.partner = { since: Math.max(18, age - 6), age: p.sex === 'F' ? age + 2 : Math.max(18, age - 2) };
+    life.marriages = 1;
+  }
+  for (let k = 0; k < (p.children || 0); k++) life.children.push({ bornAge: Math.max(17, age - 3 - 3 * k), alive: true, dieAt: null });
+  life.habits = { smoking: !!p.smoking, drinking: !!p.drinking, exercise: !!p.exercise };
+  life.parents = {
+    mother: { age: age + 27, alive: age + 27 < 82 },
+    father: { age: age + 30, alive: age + 30 < 78 },
+  };
+  // 이미 가진 습관과 성격의 위험
+  const R = world.events.profileRisks;
+  const share = (x) => (typeof x === 'number' ? x : x[p.sex]);
+  addRisk(life, R.smoking.rr, share(R.smoking.share), !!p.smoking, Math.max(age, R.smoking.fromAge));
+  addRisk(life, R.drinking.rr, share(R.drinking.share), !!p.drinking, Math.max(age, R.drinking.fromAge));
+  addRisk(life, R.exercise.rr, share(R.exercise.share), !!p.exercise, Math.max(age, R.exercise.fromAge));
+  addRisk(life, R.lowConscientiousness.rr, share(R.lowConscientiousness.share), p.conscientiousness === 'low', age);
   return life;
 }

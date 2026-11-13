@@ -20,7 +20,7 @@
 <script type="module">
 import { loadGame } from './js/load.js';
 import { createLife, drawBirth, runToEnd, policyDecide, replayDecider } from './js/engine.js';
-import { runOthers } from './js/multiverse.js';
+import { runOthers, branchLife, firstDifference } from './js/multiverse.js';
 
 const results = [];
 const rows = document.getElementById('rows');
@@ -138,6 +138,27 @@ try {
       checked++;
     }
     report('T6', '되감기 전반', ok && checked === 30, `삶 ${checked}개에서 가운데 선택을 바꾸고 그 나이 이전 기록을 비교`);
+  }
+
+  // T6-2 분기 지점: 되감은 삶은 바꾼 선택의 나이에서 멈추고, 끝까지 살면 선택 기록이 그 자리에서만 갈라진다
+  {
+    let checked = 0;
+    let ok = true;
+    for (let i = 0; checked < 30 && i < 400; i++) {
+      const seed = 't6b-' + i;
+      const a = auto(seed, 0);
+      if (a.choices.length < 2) continue;
+      const k = a.choices.length - 2;
+      const target = a.choices[k];
+      const other = defs.choices.find((c) => c.id === target.id).options.find((o) => o.id !== target.option).id;
+      const b = branchLife(world, defs, seed, a.choices, k, other);
+      if (!b.alive || b.pending || b.age !== target.age || b.choices.length !== k + 1 || b.choices[k].option !== other) ok = false;
+      if (JSON.stringify(b.log.slice(0, target.age)) !== JSON.stringify(a.log.slice(0, target.age))) ok = false;
+      runToEnd(b, policyDecide);
+      if (firstDifference(a.choices, b.choices) !== k) ok = false;
+      checked++;
+    }
+    report('T6-2', '분기 지점', ok && checked === 30, `삶 ${checked}개를 되감아 멈춘 나이, 이전 기록, 갈라진 위치를 확인`);
   }
 
   // T7 되감기 운 유지: 효과가 없는 옵션끼리 바꾸면 선택 항목 외 전체 기록이 같다
