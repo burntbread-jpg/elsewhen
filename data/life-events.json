@@ -39,6 +39,13 @@
     "dest": { "USA": 5, "DEU": 3, "JPN": 1, "KOR": 1, "BRA": 0.5, "CHN": 0.5 },
     "city": [0.01, 0.04]
   },
+  "profileRisks": {
+    "_note": "지금의 나를 입력했을 때 적용하는 사망 위험. rr 은 해당하는 사람의 위험이 나머지의 몇 배인지, share 는 그런 사람의 비율이다. grade 가 research 인 것은 출처가 있고, assumption 은 출처를 확인하지 않은 가정값이다.",
+    "lowConscientiousness": { "rr": 1.37, "share": 0.333, "grade": "research", "source": "Jokela et al. 2013, Am J Epidemiol 178(5):667-675. 7개 코호트 76,150명. 성실성 하위 3분의 1 대 나머지의 위험비 1.37 (95% CI 1.18-1.58). 관찰 연구이며 인과가 아니다." },
+    "smoking": { "rr": 1.9, "share": { "M": 0.13, "F": 0.10 }, "fromAge": 40, "grade": "assumption" },
+    "drinking": { "rr": 1.35, "share": 0.07, "fromAge": 40, "grade": "assumption" },
+    "exercise": { "rr": 0.8, "share": 0.25, "fromAge": 45, "grade": "assumption" }
+  },
   "causes": {
     "bands": [0, 1, 5, 15, 50, 70],
     "low": {

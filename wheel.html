@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d0c0a">
+<title>ELSEWHEN</title>
+<style>
+  :root { --ink: #ece4d2; --soft: #a39a86; --dim: #6b6558; --amber: #e2a04a; --line: #3a352c; --bg: #0d0c0a; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--ink); overflow: hidden; }
+  body { font: 15px/1.5 "Noto Serif KR", "Nanum Myeongjo", "AppleMyungjo", "Batang", Georgia, serif; -webkit-user-select: none; user-select: none; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  .vignette { position: fixed; inset: 0; pointer-events: none; background: radial-gradient(ellipse at 50% 50%, rgba(13,12,10,0) 50%, rgba(13,12,10,0.8) 100%); }
+  #hud { position: fixed; inset: 0; pointer-events: none; }
+  .fade { opacity: 0; transition: opacity 0.9s; }
+  .show { opacity: 1 !important; }
+
+  /* 입력 */
+  #form { position: fixed; left: 0; top: 0; bottom: 0; width: min(360px, 100%); padding: 26px 22px 26px; overflow-y: auto; pointer-events: auto;
+    background: linear-gradient(to right, rgba(13,12,10,0.94) 70%, rgba(13,12,10,0)); transition: opacity 0.8s, transform 0.8s; }
+  #form { scrollbar-width: thin; scrollbar-color: #3a352c transparent; }
+  #form::-webkit-scrollbar { width: 6px; }
+  #form::-webkit-scrollbar-thumb { background: #3a352c; border-radius: 3px; }
+  #form.gone { opacity: 0; transform: translateX(-30px); pointer-events: none; }
+  #form h1 { margin: 0; font-size: 24px; font-weight: 500; letter-spacing: 0.3em; }
+  #form h1 span { color: var(--amber); }
+  #form .lead { margin: 10px 0 18px; font-size: 13px; color: var(--soft); line-height: 1.7; }
+  .field { margin-top: 13px; }
+  .field label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--soft); margin-bottom: 5px; letter-spacing: 0.05em; }
+  .grade { width: 7px; height: 7px; border-radius: 50%; border: 1px solid var(--amber); display: inline-block; }
+  .grade.stat { background: var(--amber); }
+  .grade.research { background: linear-gradient(to right, var(--amber) 50%, transparent 50%); }
+  .seg { display: flex; flex-wrap: wrap; gap: 5px; }
+  .seg button { flex: 1 1 auto; padding: 7px 8px; font: inherit; font-size: 13px; color: var(--soft); background: transparent; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { color: var(--ink); border-color: var(--amber); background: rgba(226,160,74,0.1); }
+  #year { width: 100%; padding: 7px 10px; font: inherit; font-size: 15px; color: var(--ink); background: transparent; border: 1px solid var(--line); border-radius: 6px; }
+  #react { margin-top: 16px; min-height: 20px; font-size: 13px; color: var(--amber); letter-spacing: 0.04em; }
+  #begin { margin-top: 10px; width: 100%; padding: 12px; font: inherit; font-size: 15px; letter-spacing: 0.2em; color: #1b1509; background: var(--amber); border: 0; border-radius: 8px; cursor: pointer; }
+  .legend { margin-top: 14px; font-size: 11px; color: var(--dim); line-height: 1.8; }
+  .legend .grade { margin-right: 4px; }
+
+  /* 명부 */
+  #ledger { position: absolute; right: 18px; top: 18px; bottom: 18px; width: 150px; text-align: right; pointer-events: none; }
+  #ledger h2 { margin: 0 0 8px; font-size: 12px; font-weight: 500; color: var(--soft); letter-spacing: 0.25em; }
+  #ledger h2 b { color: var(--ink); font-weight: 500; letter-spacing: 0.05em; margin-left: 6px; font-variant-numeric: tabular-nums; }
+  #ledger ol { list-style: none; margin: 0; padding: 0; max-height: calc(100% - 30px); overflow: hidden;
+    -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent); mask-image: linear-gradient(to bottom, #000 55%, transparent); }
+  #ledger li { font-size: 13px; line-height: 1.9; font-style: italic; color: var(--soft); font-variant-numeric: tabular-nums; animation: ink 1.1s ease-out; pointer-events: auto; cursor: pointer; white-space: nowrap; }
+  #ledger li b { font-weight: 500; font-style: normal; color: var(--ink); margin-right: 6px; }
+  #ledger li:first-child { color: var(--ink); }
+  @keyframes ink { from { opacity: 0; color: var(--amber); letter-spacing: 0.12em; } to { opacity: 1; letter-spacing: 0; } }
+  #alive { position: absolute; left: 20px; bottom: 18px; font-size: 13px; color: var(--dim); font-variant-numeric: tabular-nums; letter-spacing: 0.08em; }
+
+  /* 질문 */
+  #ask span { position: absolute; left: 0; right: 0; text-align: center; font-size: 17px; letter-spacing: 0.1em; text-shadow: 0 0 18px var(--bg), 0 0 6px var(--bg); }
+  #ask #optA { top: 9vh; }
+  #ask #optB { bottom: 12vh; }
+  #ask em { position: absolute; left: 0; right: 0; top: 4.5vh; text-align: center; font-style: normal; font-size: 13px; color: var(--amber); letter-spacing: 0.3em; text-shadow: 0 0 12px var(--bg), 0 0 4px var(--bg); }
+  #hint2 { position: absolute; left: 0; right: 0; bottom: 5vh; text-align: center; font-size: 13px; color: var(--soft); letter-spacing: 0.18em; text-shadow: 0 0 12px var(--bg), 0 0 4px var(--bg); }
+  #face { position: absolute; left: 0; right: 0; bottom: 0; padding: 70px 0 4vh; text-align: center; background: linear-gradient(to bottom, rgba(13,12,10,0), rgba(13,12,10,0.9) 60%); }
+  #face p { margin: 0; }
+  #faceLine { font-size: 18px; letter-spacing: 0.1em; }
+  #faceSub { font-size: 13px; color: var(--soft); margin-top: 6px !important; font-variant-numeric: tabular-nums; letter-spacing: 0.06em; }
+  #again { pointer-events: auto; margin-top: 14px; padding: 8px 20px; font: inherit; font-size: 13px; letter-spacing: 0.2em; color: var(--soft); background: transparent; border: 1px solid var(--line); border-radius: 999px; cursor: pointer; }
+  #tag { position: absolute; transform: translate(-50%, -150%); font-size: 13px; padding: 4px 10px; background: rgba(13,12,10,0.85); border: 1px solid var(--line); border-radius: 4px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  @media (max-width: 640px) { #ledger { width: 118px; right: 10px; } #ledger li { font-size: 12px; } }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="vignette"></div>
+
+<div id="hud">
+  <div id="ledger" class="fade"><h2>명부<b id="ledgerCount">0</b></h2><ol id="ledgerList"></ol></div>
+  <div id="alive" class="fade"></div>
+  <div id="ask" class="fade"><em id="qword"></em><span id="optA"></span><span id="optB"></span></div>
+  <div id="hint2" class="fade"></div>
+  <div id="face" class="fade"><p id="faceLine"></p><p id="faceSub"></p><button id="again">처음으로</button></div>
+  <div id="tag" class="fade"></div>
+</div>
+
+<form id="form" onsubmit="return false">
+  <h1>ELSE<span>WHEN</span></h1>
+  <p class="lead">지금의 나에서 100개의 내가 뻗어 나갑니다. 당신은 그 바퀴를 돌리는 포르투나입니다.</p>
+
+  <div class="field"><label><i class="grade stat"></i>태어난 해</label><input id="year" type="number" min="1936" max="2008" value="1986" inputmode="numeric"></div>
+  <div class="field"><label><i class="grade stat"></i>성별</label><div class="seg" data-key="sex"><button data-v="F">여성</button><button data-v="M">남성</button></div></div>
+  <div class="field"><label><i class="grade"></i>형편</label><div class="seg" data-key="wealth"><button data-v="1">어렵다</button><button data-v="2">빠듯</button><button data-v="3">보통</button><button data-v="4">여유</button><button data-v="5">넉넉</button></div></div>
+  <div class="field"><label><i class="grade"></i>학력</label><div class="seg" data-key="edu"><button data-v="2">고졸 미만</button><button data-v="3">고졸</button><button data-v="4">대졸</button></div></div>
+  <div class="field"><label><i class="grade"></i>하는 일</label><div class="seg" data-key="job"><button data-v="office">사무</button><button data-v="professional">전문</button><button data-v="service">서비스</button><button data-v="labor">현장</button><button data-v="business">자영</button><button data-v="home">살림</button></div></div>
+  <div class="field"><label><i class="grade"></i>함께 사는 사람</label><div class="seg" data-key="partner"><button data-v="1">배우자가 있다</button><button data-v="0">없다</button></div></div>
+  <div class="field"><label><i class="grade"></i>아이</label><div class="seg" data-key="children"><button data-v="0">없다</button><button data-v="1">하나</button><button data-v="2">둘</button><button data-v="3">셋 이상</button></div></div>
+  <div class="field"><label><i class="grade"></i>담배</label><div class="seg" data-key="smoking"><button data-v="0">피우지 않는다</button><button data-v="1">피운다</button></div></div>
+  <div class="field"><label><i class="grade"></i>술</label><div class="seg" data-key="drinking"><button data-v="0">가끔</button><button data-v="1">자주, 많이</button></div></div>
+  <div class="field"><label><i class="grade"></i>운동</label><div class="seg" data-key="exercise"><button data-v="1">꾸준히</button><button data-v="0">거의 안 한다</button></div></div>
+  <div class="field"><label><i class="grade research"></i>성격: 맡은 일을 미루지 않고 끝낸다</label><div class="seg" data-key="conscientiousness"><button data-v="high">그렇다</button><button data-v="mid">보통</button><button data-v="low">아니다</button></div></div>
+
+  <p id="react"></p>
+  <button id="begin" type="button">바퀴를 돌린다</button>
+  <p class="legend">
+    <i class="grade stat"></i>실제 통계 (UN 인구전망, 미국)<br>
+    <i class="grade research"></i>연구로 뒷받침 (관찰 연구의 위험비)<br>
+    <i class="grade"></i>출처를 확인하지 않은 가정값<br>
+    이것은 예언이 아니라 통계가 그리는 100가지 가능성입니다. 올해 이후의 수치는 모두 전망입니다. 입력한 내용은 이 기기 밖으로 나가지 않습니다. 프로토타입은 미국 통계로만 돕니다.
+  </p>
+</form>
+
+<script type="module" src="js/wheel/main.js"></script>
+</body>
+</html>
