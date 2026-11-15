@@ -15,6 +15,7 @@ import { CAUSE_LABEL } from '../narrative.js';
 import { Sound } from '../loom/audio.js';
 import { THREADS, NOW, runThread, runAll, luck, planQuestions, answerOf } from '../wheel/sim.js';
 import { layout } from './layout.js';
+import { rand } from '../rng.js';
 
 THREE.ColorManagement.enabled = false;
 
@@ -413,6 +414,11 @@ const G = {
   prevEnds: null,
   graces: [], // 가지마다 받은 은총
   graceLeft: 3,
+  answered: false, // 지금 질문에 답했는가
+  answers: [], // 플레이어가 쓴 답의 기록
+  autoNext: 0,
+  warnSeen: new Set(), // 이미 달아올라 한 번 느려졌던 가지
+  slowUntil: 0,
   vows: [], // { i, target, at, text, state }
   lastVow: -99,
   vowShown: '',
@@ -474,6 +480,9 @@ function setup() {
   G.alt = new Array(N).fill(null);
   G.graces = Array.from({ length: N }, () => []);
   G.graceLeft = world.events.grace.count;
+  G.answers = [];
+  G.warnSeen = new Set();
+  G.slowUntil = 0;
   perilCache.clear();
   G.vows = [];
   G.lastVow = -99;
@@ -864,7 +873,12 @@ function closeBook() {
   $('bookList').innerHTML = changed.length
     ? changed.map((i) => `<li class="${G.lives[i].death.age < G.base[i].death.age ? 'late' : ''}"><i>№${i + 1}</i><s>${lineOf(G.base[i])}</s><br><em>${lineOf(G.lives[i])}</em></li>`).join('')
     : '<li>한 줄도 달라지지 않았다. 통계가 쓴 그대로다.</li>';
-  $('bookAsk').textContent = '';
+  $('bookAsk').innerHTML = G.answers.length
+    ? '<b>네가 쓴 답</b><br>' +
+      G.answers
+        .map((a) => `${a.age}세 · ${escapeHtml(a.prompt)}<br><em>“${escapeHtml(a.text)}”</em> → ${escapeHtml(a.options[0])} ${a.counts[0]} · ${escapeHtml(a.options[1])} ${a.counts[1]}`)
+        .join('<br>')
+    : '';
   $('bookWager').hidden = true;
   $('bookGo').textContent = '나무를 본다';
   $('bookGo').disabled = false;
@@ -1061,9 +1075,17 @@ function openQuestion() {
   }
   writeFates();
   uniforms.uSlot.value = slot;
-  $('qword').textContent = `${G.questions[G.qi].askAge}세 · ${q.def.short || q.def.prompt}`;
+  G.answered = false;
+  $('qword').textContent = `${G.questions[G.qi].askAge}세`;
+  $('qprompt').textContent = q.def.prompt;
+  $('reading').textContent = '';
+  $('answerText').value = '';
+  $('answerForm').classList.remove('wait');
+  $('answerForm').hidden = false;
+  $('choiceButtons').hidden = true;
   showTally();
-  $('ask').classList.add('show');
+  $('ask').classList.add('show', 'asking');
+  setTimeout(() => G.state === 'ask' && !G.answered && $('answerText').focus({ preventScroll: true }), 400);
   sound.play('gayageum_a2', { gain: 0.55, duration: 5 });
   return true;
 }
@@ -1090,6 +1112,70 @@ function setAnswer(i, value) {
   showTally();
 }
 
+// ---------- 주관식 답 ----------
+
+const escapeHtml = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+/** 쓴 답을 서버(api/interpret)에 보내 100명 가운데 몇 할이 첫째 답을 따를지 받는다. */
+async function submitAnswer(text) {
+  const q = G.questions[G.qi];
+  if (!text || G.answered || $('answerForm').classList.contains('wait')) return;
+  $('answerForm').classList.add('wait');
+  $('reading').textContent = '읽는 중';
+  try {
+    const res = await fetch('api/interpret', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: q.def.prompt, options: q.def.options.map((o) => o.label), answer: text }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || typeof data.share !== 'number') throw new Error(data.error || `HTTP ${res.status}`);
+    applyShare(data.share, data.reading, text);
+  } catch (err) {
+    // 해석할 수 없으면 선택지로 묻는다. 쓴 답은 그대로 기록에 남긴다.
+    $('answerForm').classList.remove('wait');
+    $('answerForm').hidden = true;
+    $('reading').textContent = '지금은 글을 읽을 수 없다 · 둘 가운데 고른다';
+    const box = $('choiceButtons');
+    box.querySelectorAll('button').forEach((b) => {
+      b.textContent = q.def.options[Number(b.dataset.o)].label;
+      b.onclick = () => {
+        box.hidden = true;
+        applyShare(b.dataset.o === '0' ? 1 : 0, null, text);
+      };
+    });
+    box.hidden = false;
+  }
+}
+
+/** share 만큼의 나는 첫째 답을, 나머지는 둘째 답을 따른다. 누가 어느 쪽인지는 실마다 정해진 난수로 고른다. */
+function applyShare(share, reading, text) {
+  const q = G.questions[G.qi];
+  if (G.state !== 'ask' || G.answered) return;
+  for (let i = 0; i < N; i++) {
+    if (!G.meets[i]) continue;
+    setAnswer(i, rand(G.seed, i, 'answer', q.def.id) < share ? 0 : 1);
+  }
+  regrow();
+  G.answered = true;
+  const t = [0, 0];
+  for (let i = 0; i < N; i++) if (G.meets[i]) t[G.ans[i]]++;
+  G.answers.push({ age: q.askAge, prompt: q.def.prompt, text, reading, options: q.def.options.map((o) => o.label), counts: t });
+  $('answerForm').classList.remove('wait');
+  $('answerForm').hidden = true;
+  $('choiceButtons').hidden = true;
+  $('ask').classList.remove('asking');
+  $('reading').textContent = reading ? `“${reading}”` : '';
+  sound.play('harp_c5', { gain: 0.45, rate: 0.84, duration: 3 });
+  clearTimeout(G.autoNext);
+  G.autoNext = setTimeout(() => G.state === 'ask' && G.answered && commit(), 6000);
+}
+
+$('answerForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  submitAnswer($('answerText').value.trim());
+});
+
 /** 답이 바뀌면 그 뒤의 가지 모양도 달라진다. */
 function regrow() {
   if (!G.dirty) return;
@@ -1098,6 +1184,10 @@ function regrow() {
 }
 
 function commit() {
+  // 자동 진행과 손이 겹쳐도 한 번만 넘어간다.
+  if (G.state !== 'ask' || !G.answered) return;
+  clearTimeout(G.autoNext);
+  $('answerText').blur();
   regrow();
   const v = uniforms.uAsk.value;
   const ages = [v.x, v.y, v.z];
@@ -1134,9 +1224,20 @@ function frame(now) {
       if (G.hub >= G.A0) G.state = 'grow';
       break;
     case 'grow': {
-      // 길게 누르는 동안 나무가 자란다.
-      if (G.holding) G.speed = Math.min(7, Math.max(G.speed, 1.2) + dt * 1.1);
-      else G.speed = Math.max(0, G.speed - dt * 12);
+      // 나무는 저절로 자란다. 누르고 있으면 빨라지고, 붙잡을 만한 가지가 달아오르면 느려진다.
+      let want = G.holding ? 6.5 : 2.4;
+      // 붙잡을 만한 가지가 처음 달아오를 때만 잠깐 느려진다.
+      if (!G.holding && G.graceLeft > 0) {
+        for (let i = 0; i < N; i++) {
+          const w = threadData[T1(i) + 2];
+          if (w > 0.01 && w < 0.45 && !G.warnSeen.has(i)) {
+            G.warnSeen.add(i);
+            if (now > G.slowUntil + 5000) G.slowUntil = now + 1400; // 한 번 느려진 뒤 5초는 쉬어 간다
+          }
+        }
+        if (now < G.slowUntil) want = 0.5;
+      }
+      G.speed += (want - G.speed) * Math.min(1, dt * 3);
       G.age += dt * G.speed;
       const q = G.questions[G.qi];
       if (q && G.age >= q.askAge) {
@@ -1176,7 +1277,7 @@ function frame(now) {
   threadTex.needsUpdate = true;
   updateVows();
 
-  uniforms.uEmber.value += ((asking ? 1 : 0) - uniforms.uEmber.value) * Math.min(1, dt * (asking ? 3 : 1.2));
+  uniforms.uEmber.value += ((asking && G.answered ? 1 : 0) - uniforms.uEmber.value) * Math.min(1, dt * (asking ? 3 : 1.2));
   const foresee = G.state === 'form' ? 1 : asking ? 1 : 0;
   uniforms.uForesee.value += (foresee - uniforms.uForesee.value) * Math.min(1, dt * 2.5);
   if (G.embers && uniforms.uEmber.value > 0.01) {
@@ -1252,9 +1353,9 @@ function frame(now) {
     const w = rewritten();
     $('count').innerHTML = `늦춘 줄<b>${w.later}</b>${w.earlier ? `앞당긴 줄 ${w.earlier} · ` : ''}내기 ${G.target}`;
   }
-  if (G.state === 'grow' && !G.everHeld) hint('길게 눌러 나무를 기른다');
-  else if (G.state === 'grow' && G.graceLeft > 0 && !G.holding && threadData.some((x, n) => n >= N * 4 && n < N * 8 && n % 4 === 2 && x > 0.01)) hint('끝이 달아오른 가지를 누르면 붙잡는다 · 잔잔히 떠는 가지일수록 버틴다 · 세 번뿐이다');
-  else if (asking) hint('가지를 훑어 답을 바꾼다 · 불씨는 그 삶이 끝날 자리다 · 가만히 눌러 계속 기른다');
+  if (G.state === 'grow' && G.graceLeft > 0 && !G.holding && threadData.some((x, n) => n >= N * 4 && n < N * 8 && n % 4 === 2 && x > 0.01)) hint('끝이 달아오른 가지를 누르면 붙잡는다 · 잔잔히 떠는 가지일수록 버틴다 · 세 번뿐이다');
+  else if (asking && G.answered) hint('불씨는 그 삶이 끝날 자리다 · 눌러서 계속');
+  else if (G.state === 'grow' && G.age - G.A0 < 4) hint('나무가 자란다 · 누르고 있으면 빨라진다');
   else hint('');
 
   renderer.render(scene, camera);
@@ -1313,26 +1414,14 @@ canvas.addEventListener('pointerdown', (e) => {
   if (G.state === 'grow') {
     G.holding = true;
     G.everHeld = true;
-  } else if (G.state === 'ask') {
-    hold.timer = setTimeout(() => {
-      if (G.state === 'ask' && drag.on) {
-        commit();
-        G.holding = true;
-        G.everHeld = true;
-      }
-    }, 650);
+  } else if (G.state === 'ask' && G.answered) {
+    commit();
   }
 });
 
 canvas.addEventListener('pointermove', (e) => {
   if (drag.on) drag.moved = Math.max(drag.moved, Math.hypot(e.clientX - drag.x, e.clientY - drag.y));
-  if (G.state === 'ask') {
-    if (drag.on && drag.moved > 10) {
-      clearTimeout(hold.timer);
-      brush(e);
-    }
-    return;
-  }
+  if (G.state === 'ask') return;
   if (G.state !== 'grow' && G.state !== 'end') return;
   if (e.pointerType !== 'mouse' && !drag.on) return;
   const i = threadAt(e, (j) => aliveAt(j, G.age) || G.state === 'end');
@@ -1373,15 +1462,14 @@ canvas.addEventListener('pointercancel', release);
 
 window.addEventListener('keydown', (e) => {
   if (e.code !== 'Space' || e.repeat) return;
+  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON')) return; // 답을 쓰는 중
   if (G.state === 'grow') {
     e.preventDefault();
     G.holding = true;
     G.everHeld = true;
-  } else if (G.state === 'ask') {
+  } else if (G.state === 'ask' && G.answered) {
     e.preventDefault();
     commit();
-    G.holding = true;
-    G.everHeld = true;
   }
 });
 window.addEventListener('keyup', (e) => {
@@ -1397,7 +1485,7 @@ window.addEventListener('resize', resize);
 resize();
 
 // 확인용
-window.__fortuna = { G, profile, setup, commit, setAnswer, regrow, closeBook, grant, uniforms, sound, frame };
+window.__fortuna = { G, profile, setup, commit, setAnswer, regrow, closeBook, grant, applyShare, submitAnswer, uniforms, sound, frame };
 
 loadGame('.')
   .then(({ world, defs }) => {
