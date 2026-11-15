@@ -874,9 +874,9 @@ function closeBook() {
     ? changed.map((i) => `<li class="${G.lives[i].death.age < G.base[i].death.age ? 'late' : ''}"><i>№${i + 1}</i><s>${lineOf(G.base[i])}</s><br><em>${lineOf(G.lives[i])}</em></li>`).join('')
     : '<li>한 줄도 달라지지 않았다. 통계가 쓴 그대로다.</li>';
   $('bookAsk').innerHTML = G.answers.length
-    ? '<b>네가 쓴 답</b><br>' +
+    ? '<b>네가 고른 답</b><br>' +
       G.answers
-        .map((a) => `${a.age}세 · ${escapeHtml(a.prompt)}<br><em>“${escapeHtml(a.text)}”</em> → ${escapeHtml(a.options[0])} ${a.counts[0]} · ${escapeHtml(a.options[1])} ${a.counts[1]}`)
+        .map((a) => `${a.age}세 · ${escapeHtml(a.prompt)} → ${escapeHtml(a.options[a.counts[0] >= a.counts[1] ? 0 : 1])}${a.text ? `<br><em>“${escapeHtml(a.text)}”</em>` : ''}`)
         .join('<br>')
     : '';
   $('bookWager').hidden = true;
@@ -1082,10 +1082,14 @@ function openQuestion() {
   $('answerText').value = '';
   $('answerForm').classList.remove('wait');
   $('answerForm').hidden = false;
-  $('choiceButtons').hidden = true;
+  const box = $('choiceButtons');
+  box.querySelectorAll('button').forEach((b) => {
+    b.textContent = q.def.options[Number(b.dataset.o)].label;
+    b.onclick = () => applyShare(b.dataset.o === '0' ? 1 : 0, null, $('answerText').value.trim());
+  });
+  box.hidden = false;
   showTally();
   $('ask').classList.add('show', 'asking');
-  setTimeout(() => G.state === 'ask' && !G.answered && $('answerText').focus({ preventScroll: true }), 400);
   sound.play('gayageum_a2', { gain: 0.55, duration: 5 });
   return true;
 }
@@ -1116,39 +1120,7 @@ function setAnswer(i, value) {
 
 const escapeHtml = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-/** 쓴 답을 서버(api/interpret)에 보내 100명 가운데 몇 할이 첫째 답을 따를지 받는다. */
-async function submitAnswer(text) {
-  const q = G.questions[G.qi];
-  if (!text || G.answered || $('answerForm').classList.contains('wait')) return;
-  $('answerForm').classList.add('wait');
-  $('reading').textContent = '읽는 중';
-  try {
-    const res = await fetch('api/interpret', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question: q.def.prompt, options: q.def.options.map((o) => o.label), answer: text }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || typeof data.share !== 'number') throw new Error(data.error || `HTTP ${res.status}`);
-    applyShare(data.share, data.reading, text);
-  } catch (err) {
-    // 해석할 수 없으면 선택지로 묻는다. 쓴 답은 그대로 기록에 남긴다.
-    $('answerForm').classList.remove('wait');
-    $('answerForm').hidden = true;
-    $('reading').textContent = '지금은 글을 읽을 수 없다 · 둘 가운데 고른다';
-    const box = $('choiceButtons');
-    box.querySelectorAll('button').forEach((b) => {
-      b.textContent = q.def.options[Number(b.dataset.o)].label;
-      b.onclick = () => {
-        box.hidden = true;
-        applyShare(b.dataset.o === '0' ? 1 : 0, null, text);
-      };
-    });
-    box.hidden = false;
-  }
-}
-
-/** share 만큼의 나는 첫째 답을, 나머지는 둘째 답을 따른다. 누가 어느 쪽인지는 실마다 정해진 난수로 고른다. */
+/** share 만큼의 나는 첫째 답을, 나머지는 둘째 답을 따른다. (선택지로 고르면 share 는 1 또는 0 이다.) */
 function applyShare(share, reading, text) {
   const q = G.questions[G.qi];
   if (G.state !== 'ask' || G.answered) return;
@@ -1171,10 +1143,8 @@ function applyShare(share, reading, text) {
   G.autoNext = setTimeout(() => G.state === 'ask' && G.answered && commit(), 6000);
 }
 
-$('answerForm').addEventListener('submit', (e) => {
-  e.preventDefault();
-  submitAnswer($('answerText').value.trim());
-});
+// 한 줄을 적고 Enter 를 눌러도 아무 일도 일어나지 않는다. 고르는 것은 버튼이다.
+$('answerForm').addEventListener('submit', (e) => e.preventDefault());
 
 /** 답이 바뀌면 그 뒤의 가지 모양도 달라진다. */
 function regrow() {
@@ -1485,7 +1455,7 @@ window.addEventListener('resize', resize);
 resize();
 
 // 확인용
-window.__fortuna = { G, profile, setup, commit, setAnswer, regrow, closeBook, grant, applyShare, submitAnswer, uniforms, sound, frame };
+window.__fortuna = { G, profile, setup, commit, setAnswer, regrow, closeBook, grant, applyShare, uniforms, sound, frame };
 
 loadGame('.')
   .then(({ world, defs }) => {
