@@ -80,6 +80,7 @@ export function layout(lives, defs, A0, END, fan, asked = new Set()) {
   const offT = Array.from({ length: N }, () => new Float32Array(K + 1));
   const offZ = Array.from({ length: N }, () => new Float32Array(K + 1));
   const size = Array.from({ length: N }, () => new Uint8Array(K + 1));
+  const lsz = Array.from({ length: N }, () => new Float32Array(K + 1)); // 다발 크기의 로그 (0 = 혼자, 1 = 전부)
   const splits = [];
   let prev = null;
   for (let k = 0; k <= K; k++) {
@@ -102,6 +103,7 @@ export function layout(lives, defs, A0, END, fan, asked = new Set()) {
         offT[i][k] = rho * Math.cos(phi);
         offZ[i][k] = rho * Math.sin(phi);
         size[i][k] = members.length;
+        lsz[i][k] = Math.log(members.length) / Math.log(N);
       });
       // 이 해에 큰 무리에서 떨어져 나온 가지에 꼬리표를 붙인다.
       if (prev && k > 0) {
@@ -130,6 +132,7 @@ export function layout(lives, defs, A0, END, fan, asked = new Set()) {
   smooth(ang);
   smooth(offT);
   smooth(offZ);
+  for (let p = 0; p < 3; p++) smooth(lsz);
 
-  return { ang, offT, offZ, size, splits, K };
+  return { ang, offT, offZ, size, lsz, splits, K };
 }

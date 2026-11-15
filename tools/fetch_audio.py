@@ -22,7 +22,11 @@ SOUNDS = [
     ("harp_c5", 347626),     # 켈틱 하프 C5
     ("gayageum_a2", 24551),  # 가야금 A2
     ("room", 705421),        # 빈 강당의 공기
-    ("cloth", 850705),       # 천 스치는 소리
+    ("cloth", 850705),
+    ("drop_a", 166325),      # water drop
+    ("drop_b", 533146),      # water drop
+    ("night", 148318),       # lake at night
+      # 천 스치는 소리
 ]
 UA = {"User-Agent": "Mozilla/5.0"}
 

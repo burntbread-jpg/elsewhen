@@ -1,7 +1,7 @@
 // 소리. 전부 실제 녹음(assets/audio, Freesound CC0)을 재생한다. 합성음은 만들지 않는다.
 // 긴 녹음(베틀, 줄 끊어짐)은 소리가 시작되는 지점을 찾아 조각으로 나눠 쓴다.
 
-const FILES = ['loom', 'snap', 'twig', 'harp_c4', 'harp_c5', 'gayageum_a2', 'room', 'cloth'];
+const FILES = ['loom', 'snap', 'twig', 'harp_c4', 'harp_c5', 'gayageum_a2', 'room', 'cloth', 'drop_a', 'drop_b', 'night'];
 const PENTATONIC = [0, 2, 4, 7, 9];
 
 export class Sound {
@@ -90,8 +90,16 @@ export class Sound {
   }
 
   room() {
-    const buf = this.buffers.room;
-    if (!buf || this.roomSrc) return;
+    if (this.roomSrc) return;
+    this.roomSrc = this.bed('room', 0.5);
+  }
+
+  /** 긴 녹음 하나를 끝없이 깔아 둔다. */
+  bed(name, level = 0.5) {
+    const buf = this.buffers[name];
+    if (!this.ready || !buf) return null;
+    this.beds = this.beds || {};
+    if (this.beds[name]) return this.beds[name];
     const src = this.ctx.createBufferSource();
     src.buffer = buf;
     src.loop = true;
@@ -99,11 +107,12 @@ export class Sound {
     src.loopEnd = buf.duration - 1;
     const g = this.ctx.createGain();
     g.gain.value = 0;
-    g.gain.linearRampToValueAtTime(0.5, this.ctx.currentTime + 3);
+    g.gain.linearRampToValueAtTime(level, this.ctx.currentTime + 3);
     src.connect(g);
     g.connect(this.master);
     src.start();
-    this.roomSrc = src;
+    this.beds[name] = src;
+    return src;
   }
 }
 

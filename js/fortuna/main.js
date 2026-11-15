@@ -16,6 +16,10 @@ import { Sound } from '../loom/audio.js';
 import { THREADS, NOW, runThread, runAll, luck, planQuestions, answerOf } from '../wheel/sim.js';
 import { layout } from './layout.js';
 import { rand } from '../rng.js';
+import { EffectComposer } from '../../vendor/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from '../../vendor/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from '../../vendor/jsm/postprocessing/UnrealBloomPass.js';
+import { createLake } from './lake.js';
 
 THREE.ColorManagement.enabled = false;
 
@@ -26,23 +30,42 @@ const ROUT = 6.6;
 const FAN = 3.7; // 나무가 펼쳐지는 각 (약 212도)
 const SUB = 2;
 const RING = 5;
+// 나무의 몸: 오늘까지는 줄기, 오늘부터는 수관(樹冠). 호수의 수면이 y = 0 이다.
+const TRUNK = 1.7;
+const CROWN = 5.6;
+const SPREAD = 3.2;
+const AZ = Math.PI * 0.9; // 부채꼴의 양 끝이 나무 뒤에서 거의 만난다
+// 가지는 곧게 솟다가 옆으로 퍼지고, 늙으면 물 쪽으로 늘어진다.
+const crownY = (u) => TRUNK + CROWN * (1 - Math.pow(1 - u, 2.0)) - 1.5 * Math.pow(Math.max(0, (u - 0.6) / 0.4), 2);
+const crownR = (u) => SPREAD * Math.pow(Math.sin(Math.min(Math.max(u, 0) * 1.15, 1) * Math.PI / 2), 0.85);
+const trunkR = (h) => 0.34 + 0.1 * (1 - h) + 0.3 * Math.exp(-h * 6); // h: 0 = 물가, 1 = 오늘
+const ringR = (u) => crownR(u) + 0.55 + 0.35 * u;
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
 renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2.5));
-renderer.setClearColor(0x0d0c0a, 1);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+renderer.setClearColor(0x05060a, 1);
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 200);
-scene.add(new THREE.HemisphereLight(0xfff0d8, 0x2a2018, 1.5));
-const key = new THREE.DirectionalLight(0xffe2b8, 2.2);
-key.position.set(-3, 5, 8);
+scene.add(new THREE.HemisphereLight(0xc8d6ff, 0x141820, 1.1));
+const key = new THREE.DirectionalLight(0xd8e4ff, 1.8);
+key.position.set(-6, 5, -14);
 scene.add(key);
+const fill = new THREE.DirectionalLight(0xffd2a0, 1.1);
+fill.position.set(4, 3, 10);
+scene.add(fill);
 const treeG = new THREE.Group();
-treeG.rotation.x = -0.06;
 scene.add(treeG);
+const lake = createLake(THREE, scene, renderer);
+
+// 빛 번짐: 불씨, 등불, 달이 공기 속으로 번진다.
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.85, 0.55, 0.86);
+composer.addPass(bloom);
 
 const sound = new Sound();
 
@@ -120,16 +143,19 @@ const threadMaterial = new THREE.ShaderMaterial({
       vec4 answers = row(aThread, 0.8333);
       float d = fate.r + 0.5;
       vec3 p = position;
+      vec3 outw = vec3(p.x, 0.0, p.z);
+      float ol = length(outw);
+      outw = ol > 0.001 ? outw / ol : vec3(0.0, 0.0, 1.0);
       float ahead = max(aAge - uAge, 0.0);
-      p.z += info.g * 0.3 * step(uAge - 0.5, aAge) * (0.3 + 0.7 * exp(-ahead / 12.0));
-      p.z += info.r * 0.05 * sin(uTime * 55.0 + aThread * 1.7);
+      p += outw * info.g * 0.3 * step(uAge - 0.5, aAge) * (0.3 + 0.7 * exp(-ahead / 12.0));
+      p += outw * info.r * 0.05 * sin(uTime * 55.0 + aThread * 1.7);
       // 곧 끊어질 가지는 자라는 끝이 떤다.
-      p.z += fate.b * 0.05 * sin(uTime * (14.0 + 40.0 * fate.b) + aThread * 2.1) * exp(-pow((aAge - uAge) / 2.5, 2.0));
+      p += outw * fate.b * 0.05 * sin(uTime * (14.0 + 40.0 * fate.b) + aThread * 2.1) * exp(-pow((aAge - uAge) / 2.5, 2.0));
       vWarn = fate.b;
       vVow = fate.a;
       vBeyond = aAge - d;
       vSnap = uAge - d;
-      if (vBeyond > 0.0 && vSnap > 0.0) p.z -= vSnap * vSnap * 0.03 + vBeyond * vSnap * 0.01;
+      if (vBeyond > 0.0 && vSnap > 0.0) p.y -= vSnap * vSnap * 0.05 + vBeyond * vSnap * 0.02; // 끝난 가지는 물 쪽으로 처진다
       vN = normalMatrix * normal;
       vAge = aAge;
       vTint = aTint;
@@ -177,7 +203,7 @@ const threadMaterial = new THREE.ShaderMaterial({
       }
       vec3 n = normalize(vN);
       float diff = 0.30 + 0.70 * max(dot(n, normalize(vec3(-0.35, 0.5, 0.8))), 0.0);
-      float rim = pow(1.0 - abs(n.z), 3.0) * 0.22;
+      float rim = pow(1.0 - abs(n.z), 3.0) * 0.32;
       float fibre = 0.86 + 0.14 * sin(vAng * 3.0 + vAge * 16.0);
       vec3 col = mix(vec3(0.78, 0.70, 0.56), vec3(0.94, 0.89, 0.77), vTint) * fibre;
       float choosing = uEmber * step(0.0, ahead);
@@ -224,9 +250,9 @@ const arcMaterial = new THREE.ShaderMaterial({
       float past = step(vRow, uAge);
       vec3 col = vCol;
       float a = 0.0;
-      if (vKind > 1.5) { col = vec3(0.89, 0.63, 0.29) * (0.75 + 0.15 * sin(uTime * 1.3)); a = 1.0; }  // 내기의 선
-      else if (vKind > 0.5) { col = mix(vec3(0.20, 0.18, 0.15), vCol, past); a = 1.0; }               // 십 년 눈금
-      else { a = past; col = vCol * 0.8; }
+      if (vKind > 1.5) { col = vec3(1.25, 0.86, 0.38) * (0.85 + 0.15 * sin(uTime * 1.3)); a = 1.0; }  // 내기의 선
+      else if (vKind > 0.5) { col = mix(vec3(0.16, 0.17, 0.20), vCol * 0.8, past); a = 1.0; }               // 십 년 눈금
+      else { a = past; col = vCol * 0.2; }
       if (a < 0.5) discard;
       gl_FragColor = vec4(col, 1.0);
     }
@@ -238,14 +264,17 @@ const hubMaterial = new THREE.ShaderMaterial({
   side: THREE.DoubleSide,
   vertexShader: /* glsl */ `
     attribute float aYear;
+    attribute float aBand;
     attribute vec3 aCol;
     varying vec3 vN;
     varying vec3 vCol;
     varying float vYear;
+    varying float vBand;
     void main() {
       vN = normalMatrix * normal;
       vCol = aCol;
       vYear = aYear;
+      vBand = aBand;
       gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
     }
   `,
@@ -254,10 +283,20 @@ const hubMaterial = new THREE.ShaderMaterial({
     varying vec3 vN;
     varying vec3 vCol;
     varying float vYear;
+    varying float vBand;
     void main() {
       if (vYear > uHub) discard;
-      float diff = 0.36 + 0.64 * max(dot(normalize(vN), normalize(vec3(-0.35, 0.5, 0.8))), 0.0);
-      gl_FragColor = vec4(vCol * diff, 1.0);
+      vec3 n = normalize(vN);
+      float diff = 0.30 + 0.70 * max(dot(n, normalize(vec3(-0.35, 0.5, 0.8))), 0.0);
+      float rim = pow(1.0 - abs(n.z), 3.0) * 0.25;
+      vec3 col = vCol * (diff + rim);
+      if (vBand > 0.5) {
+        // 껍질 위로 한 해에 한 줄씩 금이 간다. 그해가 위험했을수록 짙다.
+        float f = fract(vYear);
+        col *= 0.62 + 0.38 * smoothstep(0.0, 0.16, min(f, 1.0 - f));
+        col *= vec3(0.66, 0.56, 0.44);
+      }
+      gl_FragColor = vec4(col, 1.0);
     }
   `,
 });
@@ -324,14 +363,15 @@ const warnMaterial = new THREE.ShaderMaterial({
 
 // ---------- 고정된 물건 ----------
 
-const gold = new THREE.MeshStandardMaterial({ color: 0xe2a04a, emissive: 0xe2a04a, emissiveIntensity: 0.7, metalness: 0.5, roughness: 0.35 });
+const gold = new THREE.MeshStandardMaterial({ color: 0xe2a04a, emissive: 0xe2a04a, emissiveIntensity: 1.1, metalness: 0.5, roughness: 0.35, side: THREE.DoubleSide });
 const M4 = new THREE.Matrix4();
 
 const plateCanvas = document.createElement('canvas');
 plateCanvas.width = plateCanvas.height = 512;
 const plateTexture = new THREE.CanvasTexture(plateCanvas);
-const plate = new THREE.Mesh(new THREE.CircleGeometry(0.3, 64), new THREE.MeshBasicMaterial({ map: plateTexture }));
-plate.position.z = 0.05;
+const plate = new THREE.Mesh(new THREE.CircleGeometry(0.13, 64), new THREE.MeshBasicMaterial({ map: plateTexture, side: THREE.DoubleSide }));
+// 이름패는 줄기 앞에 박혀 있다.
+plate.position.set(0, TRUNK * 0.52, trunkR(0.52) + 0.02);
 treeG.add(plate);
 
 function engrave(profile, age) {
@@ -353,26 +393,6 @@ function engrave(profile, age) {
   text(String(profile.birthYear), 215, 120);
   text(`${age}`, 335, 76);
   plateTexture.needsUpdate = true;
-}
-
-{
-  const glow = new THREE.Mesh(
-    new THREE.PlaneGeometry(90, 90),
-    new THREE.ShaderMaterial({
-      depthWrite: false,
-      vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-      fragmentShader: `
-        varying vec2 vUv;
-        void main() {
-          vec2 p = vUv - vec2(0.48, 0.55);
-          float g = exp(-dot(p, p) * 50.0);
-          gl_FragColor = vec4(mix(vec3(0.050, 0.046, 0.040), vec3(0.22, 0.15, 0.08), g), 1.0);
-        }`,
-    })
-  );
-  glow.position.z = -5;
-  glow.renderOrder = -1;
-  scene.add(glow);
 }
 
 // ---------- 상태 ----------
@@ -439,6 +459,35 @@ function newSeed() {
   return a[0].toString(36) + a[1].toString(36);
 }
 
+/** 부채꼴의 각 th 와 나이 u(0~1) 를 수관 위의 자리로 옮긴다. oT·oZ 는 다발 안에서 비킨 거리. */
+function place(th, u, oT = 0, oZ = 0, lead = 0, depth = 1, rise = 1) {
+  const phi = ((th - Math.PI / 2) / (FAN / 2)) * AZ + 0.55 * u; // 자라면서 조금씩 감긴다
+  const sx = Math.sin(phi);
+  const cz = Math.cos(phi);
+  // 큰 다발은 가운데로 높이 솟고(원줄기), 떨어져 나온 작은 가지는 옆으로 낮게 퍼진다.
+  // 혼자가 된 가지일수록 제 깊이와 높이를 찾아간다. 그래서 수관이 속까지 찬다.
+  const spread = (1.2 - 0.62 * lead) * (depth + (1 - depth) * lead);
+  const lift = (0.86 + 0.36 * lead) * (rise + (1 - rise) * lead);
+  const rho = crownR(u) * spread;
+  const y = TRUNK + (crownY(u) - TRUNK) * lift;
+  // 가지가 뻗는 방향에 수직인 쪽(수직면 안)으로 다발의 두께를 준다.
+  const du = 0.01;
+  const u2 = Math.min(u + du, 1);
+  const u1 = u2 - du;
+  const dy = crownY(u2) - crownY(u1);
+  const dr = crownR(u2) - crownR(u1) + 1e-5;
+  const len = Math.hypot(dy, dr);
+  const bo = dy / len;
+  const bu = -dr / len;
+  const k = 1.15;
+  return {
+    x: sx * rho + cz * oT * k + sx * oZ * k * bo,
+    y: y + oZ * k * bu,
+    z: cz * rho - sx * oT * k + cz * oZ * k * bo,
+    phi,
+  };
+}
+
 /** 가지 위의 한 점. 나이는 소수여도 된다. */
 function pointAt(i, age) {
   const L = G.lay;
@@ -448,10 +497,10 @@ function pointAt(i, age) {
   const th = L.ang[i][k0] + (L.ang[i][k0 + 1] - L.ang[i][k0]) * f;
   const oT = L.offT[i][k0] + (L.offT[i][k0 + 1] - L.offT[i][k0]) * f;
   const oZ = L.offZ[i][k0] + (L.offZ[i][k0 + 1] - L.offZ[i][k0]) * f;
-  const r = rOf(age);
-  const cx = Math.cos(th);
-  const cy = Math.sin(th);
-  return { x: r * cx - cy * oT, y: r * cy + cx * oT, z: oZ, cx, cy, th };
+  const lead = L.lsz[i][k0] + (L.lsz[i][k0 + 1] - L.lsz[i][k0]) * f;
+  const p = place(th, kf / L.K, oT, oZ, lead, 0.3 + 0.85 * luck(G.seed, i, 'depth'), 0.78 + 0.5 * luck(G.seed, i, 'rise'));
+  p.th = th;
+  return p;
 }
 
 function writeFates() {
@@ -492,6 +541,7 @@ function setup() {
   for (let i = 0; i < N; i++) threadData[T2(i)] = threadData[T2(i) + 1] = threadData[T2(i) + 2] = 0.5;
   uniforms.uAsk.value.set(1000, 1000, 1000);
   G.age = G.passedTo = G.A0;
+  lake.reset();
   engrave(profile, G.A0);
   buildTree();
 }
@@ -532,16 +582,24 @@ function buildTree() {
         const th = thickAt(a0) + (thickAt(a0 + 1) - thickAt(a0)) * (age - a0);
         const rad = 0.026 * th;
         const p = pointAt(i, age);
+        const pa = pointAt(i, age - 0.3);
+        const pb = pointAt(i, age + 0.3);
+        TV.set(pb.x - pa.x, pb.y - pa.y, pb.z - pa.z).normalize();
+        N1.crossVectors(TV, Math.abs(TV.y) > 0.98 ? XA : YA).normalize();
+        N2.crossVectors(N1, TV);
         for (let s = 0; s < RING; s++) {
           const ang = (s / RING) * Math.PI * 2;
           const ct = Math.cos(ang);
           const sz = Math.sin(ang);
-          position[v * 3] = p.x - p.cy * ct * rad;
-          position[v * 3 + 1] = p.y + p.cx * ct * rad;
-          position[v * 3 + 2] = p.z + sz * rad;
-          normal[v * 3] = -p.cy * ct;
-          normal[v * 3 + 1] = p.cx * ct;
-          normal[v * 3 + 2] = sz;
+          const nx = N1.x * ct + N2.x * sz;
+          const ny = N1.y * ct + N2.y * sz;
+          const nz = N1.z * ct + N2.z * sz;
+          position[v * 3] = p.x + nx * rad;
+          position[v * 3 + 1] = p.y + ny * rad;
+          position[v * 3 + 2] = p.z + nz * rad;
+          normal[v * 3] = nx;
+          normal[v * 3 + 1] = ny;
+          normal[v * 3 + 2] = nz;
           aAge[v] = age;
           aThread[v] = i;
           aTint[v] = tint;
@@ -604,12 +662,12 @@ function buildTree() {
           const ang = (s / RW) * Math.PI * 2;
           const cr = Math.cos(ang);
           const sz = Math.sin(ang);
-          position[v * 3] = (it.r + cr * it.w) * cx;
-          position[v * 3 + 1] = (it.r + cr * it.w) * cy;
-          position[v * 3 + 2] = it.z + sz * it.w;
-          normal[v * 3] = cx * cr;
-          normal[v * 3 + 1] = cy * cr;
-          normal[v * 3 + 2] = sz;
+          position[v * 3] = (it.r + cr * it.w) * cy;
+          position[v * 3 + 1] = it.y + sz * it.w;
+          position[v * 3 + 2] = (it.r + cr * it.w) * cx;
+          normal[v * 3] = cy * cr;
+          normal[v * 3 + 1] = sz;
+          normal[v * 3 + 2] = cx * cr;
           aCol[v * 3] = it.col[0];
           aCol[v * 3 + 1] = it.col[1];
           aCol[v * 3 + 2] = it.col[2];
@@ -637,29 +695,117 @@ function buildTree() {
     tree.add(mesh);
   };
 
-  // 앞으로 올 해의 호
+  // 앞으로 올 해의 고리: 나무를 두른 혼천의. 해마다의 고리는 그해가 지나야 생긴다.
   {
-    const a0 = Math.PI / 2 - FAN / 2 - 0.03;
-    const a1 = Math.PI / 2 + FAN / 2 + 0.03;
     const list = [];
     for (let age = G.A0 + 1; age <= 100; age++) {
-      const kind = age % 10 === 0 ? 1 : 0;
-      list.push({ r: rOf(age), a0, a1, seg: 120, w: kind === 2 ? 0.016 : kind === 1 ? 0.008 : 0.005, z: -0.42, col: loadColor(age), a: age, b: kind });
+      const u = (age - G.A0) / (END - G.A0);
+      const kind = age === G.goal ? 2 : age % 10 === 0 ? 1 : 0;
+      list.push({ r: ringR(u), a0: -Math.PI, a1: Math.PI, seg: 160, w: kind === 2 ? 0.014 : kind === 1 ? 0.006 : 0.0025, y: crownY(u), col: loadColor(age), a: age, b: kind });
     }
     tubes(list, arcMaterial, ['aRow', 'aKind']);
   }
 
-  // 그루터기: 지나온 해의 나이테
+  // 그루터기 위의 나이테
   {
     const years = G.A0;
-    const inner = 0.34;
-    const gap = (R0 - 0.06 - inner) / Math.max(years, 1);
+    const inner = 0.05;
+    const top = trunkR(1) - 0.02;
+    const gap = (top - inner) / Math.max(years, 1);
     const list = [];
-    for (let y = 0; y < years; y++) list.push({ r: inner + (y + 0.5) * gap, a0: 0, a1: Math.PI * 2, seg: 72, w: Math.min(0.014, gap * 0.42), z: 0, col: loadColor(y), a: y, b: 0 });
-    tubes(list, hubMaterial, ['aYear']);
+    for (let y = 0; y < years; y++) list.push({ r: inner + (y + 0.5) * gap, a0: -Math.PI, a1: Math.PI, seg: 72, w: Math.min(0.008, gap * 0.4), y: TRUNK, col: loadColor(y), a: y, b: 0 });
+    tubes(list, hubMaterial, ['aYear', 'aBand']);
   }
 
-  G.knots = new THREE.InstancedMesh(new THREE.SphereGeometry(0.04, 8, 6), new THREE.MeshStandardMaterial({ color: 0x8a5a22, roughness: 0.6 }), N);
+  // 줄기: 태어난 해가 물가에, 올해가 꼭대기에 있다. 껍질의 빛깔은 그해의 사망 확률이다.
+  {
+    const RS = 72;
+    const years = Math.max(G.A0, 1);
+    const rowsN = years * 4 + 1;
+    const position = new Float32Array(rowsN * (RS + 1) * 3);
+    const normal = new Float32Array(rowsN * (RS + 1) * 3);
+    const aCol = new Float32Array(rowsN * (RS + 1) * 3);
+    const aYear = new Float32Array(rowsN * (RS + 1));
+    const aBand = new Float32Array(rowsN * (RS + 1)).fill(1);
+    const index = [];
+    let v = 0;
+    for (let r = 0; r < rowsN; r++) {
+      const h = r / (rowsN - 1);
+      const year = h * years;
+      const col = loadColor(Math.min(Math.floor(year), years - 1));
+      for (let s = 0; s <= RS; s++) {
+        const a = (s / RS) * Math.PI * 2;
+        // 껍질의 골: 뿌리 쪽은 깊고 위로 갈수록 얕다.
+        // 실을 꼬아 올린 듯 나선으로 감긴 껍질
+        const bark = 0.055 * Math.sin(a * 7 + h * 13 + Math.sin(a * 3 + h * 2) * 1.2) + 0.018 * Math.sin(a * 19 - h * 23);
+        const rr = trunkR(h) * (1 + bark * (1.3 - 0.5 * h));
+        position[v * 3] = Math.sin(a) * rr;
+        position[v * 3 + 1] = h * TRUNK - 0.25 * (1 - h) * (1 - h);
+        position[v * 3 + 2] = Math.cos(a) * rr;
+        normal[v * 3] = Math.sin(a);
+        normal[v * 3 + 1] = 0.25 * Math.exp(-h * 5.5);
+        normal[v * 3 + 2] = Math.cos(a);
+        const shade = 0.9 + 3.2 * bark;
+        aCol[v * 3] = col[0] * shade;
+        aCol[v * 3 + 1] = col[1] * shade;
+        aCol[v * 3 + 2] = col[2] * shade;
+        aYear[v] = year;
+        if (r < rowsN - 1 && s < RS) {
+          const p = v;
+          const q = v + RS + 1;
+          index.push(p, q, p + 1, p + 1, q, q + 1);
+        }
+        v++;
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(position, 3));
+    g.setAttribute('normal', new THREE.BufferAttribute(normal, 3));
+    g.setAttribute('aCol', new THREE.BufferAttribute(aCol, 3));
+    g.setAttribute('aYear', new THREE.BufferAttribute(aYear, 1));
+    g.setAttribute('aBand', new THREE.BufferAttribute(aBand, 1));
+    g.setIndex(index);
+    const mesh = new THREE.Mesh(g, hubMaterial);
+    mesh.frustumCulled = false;
+    tree.add(mesh);
+  }
+
+  // 뿌리: 물속으로 내려간다.
+  for (let k = 0; k < 13; k++) {
+    const a = (k / 13) * Math.PI * 2 + 0.3 * Math.sin(k * 7.1);
+    const reach = 0.7 + 0.6 * ((k * 37) % 10) / 10;
+    const pts = [];
+    for (let t = 0; t <= 1.0001; t += 0.1) {
+      const rr = 0.45 + reach * Math.pow(t, 0.8);
+      const wob = 0.18 * Math.sin(t * 5 + k);
+      pts.push(new THREE.Vector3(Math.sin(a + wob * t) * rr, 0.22 - 0.8 * Math.pow(t, 0.9), Math.cos(a + wob * t) * rr));
+    }
+    const g = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 24, 1, 7, false);
+    const pos = g.attributes.position;
+    const curve = new THREE.CatmullRomCurve3(pts);
+    for (let n = 0; n < pos.count; n++) {
+      const seg = Math.floor(n / 8);
+      const t = seg / 24;
+      const c = curve.getPointAt(Math.min(t, 1));
+      const w = 0.075 * Math.pow(1 - t, 1.5) + 0.008;
+      pos.setXYZ(n, c.x + (pos.getX(n) - c.x) * w, c.y + (pos.getY(n) - c.y) * w, c.z + (pos.getZ(n) - c.z) * w);
+    }
+    g.computeVertexNormals();
+    const yearA = new Float32Array(pos.count).fill(0);
+    const colA = new Float32Array(pos.count * 3);
+    const c0 = loadColor(0);
+    for (let n = 0; n < pos.count; n++) {
+      colA[n * 3] = c0[0] * 0.42;
+      colA[n * 3 + 1] = c0[1] * 0.38;
+      colA[n * 3 + 2] = c0[2] * 0.34;
+    }
+    g.setAttribute('aYear', new THREE.BufferAttribute(yearA, 1));
+    g.setAttribute('aBand', new THREE.BufferAttribute(new Float32Array(pos.count), 1));
+    g.setAttribute('aCol', new THREE.BufferAttribute(colA, 3));
+    tree.add(new THREE.Mesh(g, hubMaterial));
+  }
+
+  G.knots = new THREE.InstancedMesh(new THREE.SphereGeometry(0.04, 8, 6), new THREE.MeshStandardMaterial({ color: 0x8a5a22, roughness: 0.6, side: THREE.DoubleSide }), N);
   G.knots.frustumCulled = false;
   tree.add(G.knots);
 
@@ -701,8 +847,6 @@ function buildTree() {
     G.graceMarks.setMatrixAt(k, M4);
   }
 
-  G.pick = new THREE.Mesh(new THREE.CircleGeometry(ROUT + 0.4, 48), new THREE.MeshBasicMaterial({ visible: false, side: THREE.DoubleSide }));
-  tree.add(G.pick);
 
   // 꼬리표: 나이 눈금, 내기의 선, 가지가 갈라진 까닭
   const box = $('labels');
@@ -715,11 +859,14 @@ function buildTree() {
     box.appendChild(el);
     G.labels.push({ el, at, fromAge });
   };
-  const edge = (age, side) => {
-    const th = Math.PI / 2 + side * (FAN / 2 + 0.07);
-    return new THREE.Vector3(rOf(age) * Math.cos(th), rOf(age) * Math.sin(th), 0);
+  // 나이는 고리의 왼쪽 앞에 적는다.
+  const edge = (age) => {
+    const u = (age - G.A0) / (END - G.A0);
+    const a = -1.05;
+    return new THREE.Vector3(Math.sin(a) * ringR(u), crownY(u), Math.cos(a) * ringR(u));
   };
-  for (let age = Math.ceil((G.A0 + 1) / 10) * 10; age <= 100; age += 10) add(String(age), 'age', edge(age, -1), 0);
+  for (let age = Math.ceil((G.A0 + 1) / 10) * 10; age <= 100; age += 10) if (age !== G.goal) add(String(age), 'age', edge(age), 0);
+  if (G.goal <= 100) add(`${G.goal} · 내기`, 'goal', edge(G.goal), 0);
   for (const v of G.vows) {
     const pv = pointAt(v.i, v.target);
     add(`№${v.i + 1}의 서원`, 'vow', new THREE.Vector3(pv.x, pv.y + 0.22, pv.z + 0.12), v.at);
@@ -729,7 +876,7 @@ function buildTree() {
   for (const s of [...G.lay.splits].sort((a, b) => b.size - a.size || a.k - b.k)) {
     if (placed.length >= 14) break;
     const p = pointAt(s.i, Math.min(G.A0 + s.k + 7, END - 1));
-    if (placed.some((q) => Math.hypot(q.x - p.x, q.y - p.y) < 1.05)) continue;
+    if (placed.some((q) => Math.hypot(q.x - p.x, q.y - p.y, q.z - p.z) < 1.05)) continue;
     placed.push(p);
     add(s.size > 1 ? `${s.text} · ${s.size}` : s.text, '', new THREE.Vector3(p.x, p.y, p.z + 0.1), G.A0 + s.k + 1);
   }
@@ -767,7 +914,7 @@ document.querySelectorAll('#form .seg button').forEach((b) => {
     const k = b.parentElement.dataset.key;
     const v = b.dataset.v;
     profile[k] = /^\d+$/.test(v) ? Number(v) : v;
-    sound.start();
+    sound.start().then(() => sound.bed('night', 0.42));
     readForm();
     formChanged();
   });
@@ -888,7 +1035,7 @@ function closeBook() {
 }
 
 $('begin').addEventListener('click', () => {
-  sound.start();
+  sound.start().then(() => sound.bed('night', 0.42));
   $('form').classList.add('gone');
   G.state = 'book';
   openBook();
@@ -1037,8 +1184,10 @@ function passed(from, to) {
     if (d > from && d <= to) {
       threadData[T0(i)] = 0.7;
       inscribe(i);
+      const pd = pointAt(i, d);
+      lake.fall(i, pd.x, pd.y, pd.z, G.lives[i].death.age >= G.goal);
       if (n++ < 3) {
-        const pan = Math.cos(pointAt(i, d).th) * 0.7;
+        const pan = Math.sin(pd.phi) * 0.7;
         if (luck(G.seed, i, 'snd') < 0.75) sound.slice('snap', luck(G.seed, i, 'snap'), { gain: 0.5, pan, max: 0.9, rate: 0.95 + luck(G.seed, i, 'sr') * 0.2 });
         else sound.play('twig', { gain: 0.45, pan, rate: 0.9 + luck(G.seed, i, 'sr') * 0.3 });
       }
@@ -1179,6 +1328,11 @@ function hint(text) {
 }
 
 const V = new THREE.Vector3();
+const TV = new THREE.Vector3();
+const N1 = new THREE.Vector3();
+const N2 = new THREE.Vector3();
+const XA = new THREE.Vector3(1, 0, 0);
+const YA = new THREE.Vector3(0, 1, 0);
 let last = performance.now();
 function frame(now) {
   const dt = Math.min(Math.max((now - last) / 1000, 0), 0.05);
@@ -1286,22 +1440,32 @@ function frame(now) {
   uniforms.uHub.value = G.hub;
   if (G.knots) updateKnots();
 
-  // 카메라: 나무 전체가 보이게. 입력 화면에서는 입력란 옆으로 비켜 준다.
+  // 카메라: 물가에 서서 나무를 올려다본다. 천천히 나무 둘레를 돈다.
   const tan = Math.tan((camera.fov * Math.PI) / 360);
-  const yMin = Math.min(ROUT * Math.cos(FAN / 2), -R0) - 0.4;
-  const cy = (ROUT + 0.5 + yMin) / 2;
-  const halfH = (ROUT + 0.5 - yMin) / 2;
-  const halfW = ROUT + 0.9;
+  const top = TRUNK + CROWN * 1.22 + 0.5;
+  const bottom = -1.4; // 물에 비친 나무가 조금 보이게
+  const cy = (top + bottom) / 2;
+  const halfH = (top - bottom) / 2;
+  const halfW = SPREAD + 1.4;
   const wide = camera.aspect > 1.15;
   const fit = Math.max(halfH / tan, halfW / (tan * camera.aspect));
-  G.dist += (fit * (G.state === 'form' && wide ? 1.22 : 1) - G.dist) * Math.min(1, dt * 2);
+  if (!Number.isFinite(G.dist)) G.dist = fit;
+  if (!Number.isFinite(G.shift)) G.shift = 0;
+  G.dist += (fit * (G.state === 'form' && wide ? 1.25 : 1) - G.dist) * Math.min(1, dt * 2);
   const shift = G.state === 'form' && wide ? -G.dist * tan * camera.aspect * 0.3 : 0;
-  camera.position.x += (shift - camera.position.x) * Math.min(1, dt * 2.5);
-  camera.position.y = cy;
-  camera.position.z = G.dist;
-  camera.lookAt(camera.position.x, cy, 0);
+  G.shift = (G.shift || 0) + (shift - (G.shift || 0)) * Math.min(1, dt * 2.5);
+  const az = 0.2 * Math.sin(now / 1000 * 0.045) + (G.state === 'end' ? 0.12 * Math.sin(now / 1000 * 0.11) : 0);
+  const rx = Math.cos(az);
+  const rz = -Math.sin(az);
+  camera.position.set(Math.sin(az) * G.dist + rx * G.shift, cy - 0.9, Math.cos(az) * G.dist + rz * G.shift);
+  camera.lookAt(rx * G.shift, cy, rz * G.shift);
+  camera.updateMatrixWorld();
   emberUniforms.uPx.value = renderer.domElement.height / (2 * tan);
   treeG.updateMatrixWorld();
+  lake.update(dt, now / 1000, G.age, (x, z, big) => {
+    const pan = Math.max(-0.8, Math.min(0.8, (x * rx + z * rz) / 5));
+    sound.play(big ? 'drop_a' : 'drop_b', { gain: big ? 0.5 : 0.38, pan, rate: 0.82 + Math.random() * 0.36 });
+  }, G.state === 'form');
 
   // 꼬리표
   const playing = G.state === 'intro' || G.state === 'grow' || G.state === 'ask' || G.state === 'end';
@@ -1328,7 +1492,8 @@ function frame(now) {
   else if (G.state === 'grow' && G.age - G.A0 < 4) hint('나무가 자란다 · 누르고 있으면 빨라진다');
   else hint('');
 
-  renderer.render(scene, camera);
+  lake.render(scene, camera, treeG);
+  composer.render();
   requestAnimationFrame(frame);
 }
 
@@ -1341,23 +1506,23 @@ const hold = { timer: 0 };
 
 /** 손가락 아래의 실. only 가 있으면 그 조건에 맞는 실 가운데서 고른다. */
 function threadAt(e, only = () => true) {
-  if (!G.pick) return -1;
-  ptr.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
-  ray.setFromCamera(ptr, camera);
-  const hit = ray.intersectObject(G.pick)[0];
-  if (!hit) return -1;
-  const local = G.pick.worldToLocal(hit.point.clone());
-  const r = Math.hypot(local.x, local.y);
-  const age = Math.min(Math.max(G.A0 + (r - R0) / G.DR, G.A0), END);
+  if (!G.lay) return -1;
+  const W = window.innerWidth;
+  const H = window.innerHeight;
+  const top = G.state === 'end' || G.state === 'form' ? END : G.age;
   let best = -1;
-  let bestD = 0.22;
+  let bestD = 26;
   for (let i = 0; i < N; i++) {
     if (!only(i)) continue;
-    const p = pointAt(i, Math.min(age, deathOf(i) + 0.5));
-    const d = Math.hypot(p.x - local.x, p.y - local.y);
-    if (d < bestD) {
-      bestD = d;
-      best = i;
+    const to = Math.min(top, deathOf(i) + 0.5);
+    for (let a = G.A0 + 0.5; a <= to + 0.01; a += 1) {
+      const p = pointAt(i, Math.min(a, to));
+      V.set(p.x, p.y, p.z).applyMatrix4(treeG.matrixWorld).project(camera);
+      const d = Math.hypot((V.x * 0.5 + 0.5) * W - e.clientX, (-V.y * 0.5 + 0.5) * H - e.clientY);
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
     }
   }
   return best;
@@ -1448,6 +1613,9 @@ window.addEventListener('keyup', (e) => {
 
 function resize() {
   renderer.setSize(window.innerWidth, window.innerHeight, false);
+  composer.setPixelRatio(renderer.getPixelRatio());
+  composer.setSize(window.innerWidth, window.innerHeight);
+  lake.resize();
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
 }
@@ -1455,7 +1623,7 @@ window.addEventListener('resize', resize);
 resize();
 
 // 확인용
-window.__fortuna = { G, profile, setup, commit, setAnswer, regrow, closeBook, grant, applyShare, uniforms, sound, frame };
+window.__fortuna = { G, profile, setup, commit, setAnswer, regrow, closeBook, grant, applyShare, uniforms, sound, frame, lake, camera, scene, bloom, composer, renderer };
 
 loadGame('.')
   .then(({ world, defs }) => {
