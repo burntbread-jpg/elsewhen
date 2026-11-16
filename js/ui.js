@@ -2,7 +2,7 @@
 
 import { loadGame } from './load.js';
 import { createLife, advance, choose, view } from './engine.js';
-import { runOthers, replayPlayer, luckOnlyLife, aliveAfter, deathsAt, aggregate, UNIVERSES } from './multiverse.js';
+import { runOthers, replayPlayer, branchLife, firstDifference, luckOnlyLife, aliveAfter, deathsAt, aggregate, UNIVERSES } from './multiverse.js';
 import { yearLines, quietLine, birthLine, summarySentences, timeline, EDU_LABEL, JOB_LABEL, CAUSE_LABEL, WEALTH_LABEL } from './narrative.js';
 import * as store from './store.js';
 
@@ -17,7 +17,11 @@ const LENGTHS = [
 ];
 const SPEEDS = [1, 3, 10];
 
-const G = { world: null, defs: null, seed: null, life: null, others: [], yearMs: 12000, speed: 1, paused: false, timer: null, lastLi: null };
+// life: 지금 화면에서 살고 있는 삶. original: 결말을 본 원래 삶. branch: 되감기 중이면 { index, age }.
+const G = { world: null, defs: null, seed: null, life: null, original: null, branch: null, branchLife: null, others: [], yearMs: 12000, speed: 1, paused: false, timer: null, lastLi: null };
+
+const branchSave = () => (G.branch ? { base: G.original.choices, index: G.branch.index } : null);
+const optionOf = (choiceId, optionId) => G.defs.choices.find((c) => c.id === choiceId).options.find((o) => o.id === optionId);
 
 function newSeed() {
   const a = new Uint32Array(2);
@@ -80,6 +84,9 @@ function renderStart() {
       if (!life.death) return;
       G.seed = p.seed;
       G.life = life;
+      G.original = life;
+      G.branch = null;
+      G.branchLife = null;
       G.others = runOthers(G.world, G.defs, p.seed);
       renderEnding();
     };
@@ -91,6 +98,9 @@ function renderStart() {
 function begin(seed) {
   G.seed = seed;
   G.life = createLife(G.world, G.defs, { seed, universe: 0 });
+  G.original = null;
+  G.branch = null;
+  G.branchLife = null;
   G.others = runOthers(G.world, G.defs, seed);
   G.speed = 1;
   G.paused = false;
@@ -221,17 +231,19 @@ function tick() {
   appendYear(r.entry);
   updateHead();
   if (r.type === 'dead') return finale();
-  store.saveCurrent(life, { yearMs: G.yearMs });
+  store.saveCurrent(life, { yearMs: G.yearMs }, branchSave());
   if (r.type === 'choice') return showChoice(r.choice);
   schedule();
 }
 
 function showChoice(c) {
+  const prev = G.branch ? G.original.choices.find((x) => x.id === c.id) : null;
   overlay.innerHTML = `
     <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="choice-title">
       <p class="area">${esc(c.area)} · ${G.life.age}세</p>
       <h2 id="choice-title">${esc(c.prompt)}</h2>
-      ${c.options.map((o) => `<button class="btn" data-opt="${esc(o.id)}">${esc(o.label)}</button>`).join('')}
+      ${c.options.map((o) => `<button class="btn" data-opt="${esc(o.id)}">${esc(o.label)}${prev && prev.option === o.id ? '<span class="prev">원래 삶의 답</span>' : ''}</button>`).join('')}
+      ${prev ? '<p class="small hint">원래 삶에서도 만났던 선택입니다. 같은 답을 골라도, 다른 답을 골라도 됩니다.</p>' : ''}
     </div>`;
   overlay.hidden = false;
   overlay.querySelectorAll('[data-opt]').forEach((b) => {
@@ -240,7 +252,7 @@ function showChoice(c) {
       closeOverlay();
       if (G.lastLi) G.lastLi.innerHTML = yearHtml(entry);
       updateHead();
-      store.saveCurrent(G.life, { yearMs: G.yearMs });
+      store.saveCurrent(G.life, { yearMs: G.yearMs }, branchSave());
       schedule();
     };
   });
@@ -251,6 +263,13 @@ function resumeSaved(saved) {
   const life = replayPlayer(G.world, G.defs, saved.seed, saved.choices, saved.age);
   G.seed = saved.seed;
   G.life = life;
+  G.original = null;
+  G.branch = null;
+  G.branchLife = null;
+  if (saved.branch) {
+    G.original = replayPlayer(G.world, G.defs, saved.seed, saved.branch.base);
+    G.branch = { index: saved.branch.index, age: saved.branch.base[saved.branch.index].age };
+  }
   G.others = runOthers(G.world, G.defs, saved.seed);
   if (saved.settings && saved.settings.yearMs) G.yearMs = saved.settings.yearMs;
   G.speed = 1;
@@ -267,6 +286,8 @@ function resumeSaved(saved) {
 function finale() {
   const life = G.life;
   store.clearCurrent();
+  if (G.branch) return branchFinale();
+  G.original = life;
   store.addFinished(life, `${life.birth.year}년 ${G.world.name(life.birth.country)} · ${life.death.age}세`);
   const controls = document.getElementById('controls');
   controls.innerHTML = '<button data-act="end">100개의 삶 보기</button>';
@@ -332,18 +353,24 @@ function bars(rows, total, mineKey) {
     .join('')}</ul>`;
 }
 
-function timelineHtml(life) {
+function timelineHtml(life, rewindable = false) {
   return `<ol class="timeline">${timeline(life)
-    .map(
-      (row) =>
-        `<li><div class="when num">${row.age}세 · ${row.year}${row.year >= G.world.boundaryYear ? '<br><span class="proj">전망</span>' : ''}</div><div>${row.lines.map((l) => `<p class="${l.kind}">${esc(l.text)}</p>`).join('')}</div></li>`
-    )
+    .map((row) => {
+      const k = rewindable && row.choice ? life.choices.findIndex((c) => c.id === row.choice) : -1;
+      const button = k >= 0 ? `<button class="rewind" data-rewind="${k}">이 선택 바꾸기</button>` : '';
+      return `<li><div class="when num">${row.age}세 · ${row.year}${row.year >= G.world.boundaryYear ? '<br><span class="proj">전망</span>' : ''}</div><div>${row.lines.map((l) => `<p class="${l.kind}">${esc(l.text)}</p>`).join('')}${button}</div></li>`;
+    })
     .join('')}</ol>`;
 }
 
 function renderEnding() {
   const w = G.world;
-  const life = G.life;
+  const life = G.original;
+  G.life = life;
+  G.branch = null;
+  const record = store.findFinished(G.seed);
+  const rewound = !!(record && record.rewind);
+  const canRewind = !rewound && life.choices.length > 0;
   const lives = [life, ...G.others];
   const agg = aggregate(lives, life);
   const luck = luckOnlyLife(w, G.defs, G.seed);
@@ -410,16 +437,31 @@ function renderEnding() {
 
       <div class="section">
         <h2>내 삶의 연표</h2>
-        ${timelineHtml(life)}
+        ${canRewind ? '<p class="small">선택 하나를 골라 바꾸고, 그 나이부터 다시 살 수 있습니다. 운은 그대로입니다. 한 삶에 한 번뿐입니다.</p>' : ''}
+        ${rewound ? '<p class="small">이 삶은 이미 한 번 되감았습니다.</p><button class="btn" data-act="compare" style="margin:0 0 14px">바꿔 산 삶과 비교 보기</button>' : ''}
+        ${timelineHtml(life, canRewind)}
       </div>
 
       <div class="section">
         <button class="btn primary" data-act="again">다시 태어나기</button>
         <button class="btn" data-act="random">아무 우주나 들여다보기</button>
         <button class="btn ghost" data-act="home">처음으로</button>
-        <p class="small" style="margin-top:14px">결정 하나를 바꿔 다시 사는 「한 번의 선택」은 다음 단계에서 열립니다.</p>
       </div>
     </section>`);
+  app.querySelectorAll('[data-rewind]').forEach((b) => {
+    b.onclick = () => askRewind(Number(b.dataset.rewind));
+  });
+  const compare = app.querySelector('[data-act="compare"]');
+  if (compare) {
+    compare.onclick = () => {
+      const other = replayPlayer(w, G.defs, G.seed, record.rewind.choices);
+      const index = firstDifference(life.choices, other.choices);
+      if (!other.death || index < 0) return;
+      G.branchLife = other;
+      G.branch = { index, age: life.choices[index].age };
+      renderCompare();
+    };
+  }
   app.querySelector('[data-act="again"]').onclick = () => begin(newSeed());
   app.querySelector('[data-act="home"]').onclick = renderStart;
   app.querySelector('[data-act="random"]').onclick = () => showUniverse(1 + Math.floor(Math.random() * (UNIVERSES - 1)));
@@ -436,7 +478,7 @@ function renderEnding() {
 }
 
 function showUniverse(u) {
-  const life = u === 0 ? G.life : G.others[u - 1];
+  const life = u === 0 ? G.original : G.others[u - 1];
   overlay.innerHTML = `
     <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="uni-title">
       <p class="area">${u === 0 ? '나' : u + '번 우주의 나'}</p>
@@ -451,6 +493,149 @@ function showUniverse(u) {
     if (e.target === overlay) closeOverlay();
   };
   overlay.querySelector('[data-act="close"]').focus();
+}
+
+// ---------- 한 번의 선택 (되감기) ----------
+
+function askRewind(k) {
+  const life = G.original;
+  const ch = life.choices[k];
+  const def = G.defs.choices.find((c) => c.id === ch.id);
+  const cur = def.options.find((o) => o.id === ch.option);
+  const other = def.options.find((o) => o.id !== ch.option);
+  overlay.innerHTML = `
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="rewind-title">
+      <p class="area">${ch.age}세의 선택</p>
+      <h2 id="rewind-title">${esc(def.prompt)}</h2>
+      <p>그때의 답: ${esc(cur.label)}</p>
+      <p class="small" style="margin:10px 0 18px">이 결정 하나만 바꾸고 ${ch.age}세부터 다시 삽니다. 운은 그대로이고, 그 뒤의 선택은 다시 고릅니다. 되감기는 한 삶에 한 번뿐입니다.</p>
+      <button class="btn primary" data-act="go">바꿔서 다시 산다: ${esc(other.label)}</button>
+      <button class="btn ghost" data-act="close">그만둔다</button>
+    </div>`;
+  overlay.hidden = false;
+  overlay.querySelector('[data-act="close"]').onclick = closeOverlay;
+  overlay.onclick = (e) => {
+    if (e.target === overlay) closeOverlay();
+  };
+  overlay.querySelector('[data-act="go"]').onclick = () => startBranch(k, other.id);
+  overlay.querySelector('[data-act="go"]').focus();
+}
+
+function startBranch(k, option) {
+  const ch = G.original.choices[k];
+  G.branch = { index: k, age: ch.age };
+  G.branchLife = null;
+  G.life = branchLife(G.world, G.defs, G.seed, G.original.choices, k, option);
+  G.speed = 1;
+  G.paused = false;
+  renderLife();
+  for (const entry of G.life.log) appendYear(entry, false);
+  const note = document.createElement('li');
+  note.innerHTML = `<p class="note fork">여기서 갈라집니다. ${ch.age}세의 선택을 바꿨습니다: ${esc(optionOf(ch.id, option).label)}. 이 앞의 삶은 원래와 같고, 운도 그대로입니다.</p>`;
+  document.getElementById('feed').appendChild(note);
+  updateHead();
+  note.scrollIntoView({ block: 'end' });
+  store.saveCurrent(G.life, { yearMs: G.yearMs }, branchSave());
+  schedule();
+}
+
+function branchFinale() {
+  G.branchLife = G.life;
+  store.setRewind(G.seed, G.life.choices);
+  const controls = document.getElementById('controls');
+  controls.innerHTML = '<button data-act="compare">두 삶 비교 보기</button>';
+  controls.querySelector('[data-act="compare"]').onclick = () => renderCompare();
+  const note = document.createElement('li');
+  note.innerHTML = '<p class="note">바꿔 산 삶이 끝났습니다. 원래 삶과 나란히 놓아 봅니다.</p>';
+  document.getElementById('feed').appendChild(note);
+  note.scrollIntoView({ block: 'end', behavior: 'smooth' });
+  G.timer = setTimeout(renderCompare, 2600);
+}
+
+function lifeBar(label, life, max, accent, y) {
+  const x0 = 62;
+  const W = 340 - x0 - 34;
+  const w = Math.max((life.death.age / max) * W, 2);
+  return `<text x="0" y="${y + 10}" font-size="11" fill="var(--soft)">${label}</text><rect x="${x0}" y="${y}" width="${w.toFixed(1)}" height="12" rx="3" fill="${accent ? 'var(--me)' : 'var(--alive)'}"/><text x="${(x0 + w + 5).toFixed(1)}" y="${y + 10}" font-size="11" fill="var(--ink)">${life.death.age}세</text>`;
+}
+
+function renderCompare() {
+  const a = G.original;
+  const b = G.branchLife;
+  const k = G.branch.index;
+  const ch = a.choices[k];
+  const def = G.defs.choices.find((c) => c.id === ch.id);
+  const optA = optionOf(ch.id, ch.option);
+  const optB = optionOf(ch.id, b.choices[k].option);
+  const diff = b.death.age - a.death.age;
+
+  const linesAt = (life) => {
+    const m = new Map();
+    for (const entry of life.log) if (entry.age >= ch.age) m.set(entry.age, yearLines(life, entry));
+    return m;
+  };
+  const la = linesAt(a);
+  const lb = linesAt(b);
+  const last = Math.max(a.death.age, b.death.age);
+  let changedYears = 0;
+  let rows = '';
+  for (let age = ch.age; age <= last; age++) {
+    const xa = la.get(age) || [];
+    const xb = lb.get(age) || [];
+    if (!xa.length && !xb.length) continue;
+    const ta = new Set(xa.map((l) => l.text));
+    const tb = new Set(xb.map((l) => l.text));
+    const cell = (list, other) => list.map((l) => `<p class="${other.has(l.text) ? 'same' : 'diff'}${l.kind === 'death' ? ' death' : ''}">${esc(l.text)}</p>`).join('');
+    if (age > ch.age && (xa.some((l) => !tb.has(l.text)) || xb.some((l) => !ta.has(l.text)))) changedYears++;
+    rows += `<li${age === ch.age ? ' class="fork"' : ''}><div class="when num">${age}세</div><div>${cell(xa, tb)}</div><div>${cell(xb, ta)}</div></li>`;
+  }
+  const sameStory = changedYears === 0;
+
+  let headline;
+  if (diff > 0) headline = `${ch.age}세의 그 선택은 ${diff}년을 더했습니다.`;
+  else if (diff < 0) headline = `${ch.age}세의 그 선택은 ${-diff}년을 덜어 냈습니다.`;
+  else if (sameStory) headline = '아무것도 달라지지 않았습니다.';
+  else headline = '삶의 길이는 같았지만, 삶은 달라졌습니다.';
+  const sub = sameStory ? '선택 하나를 바꿨지만 그 뒤의 삶은 같은 길로 흘렀습니다. 바뀌지 않는 삶도 있습니다.' : `갈라진 뒤 ${changedYears}개의 해가 서로 달랐습니다.`;
+
+  const max = Math.max(last, 1);
+  const fx = 62 + (ch.age / max) * (340 - 62 - 34);
+  const bars = `<svg class="dots" viewBox="0 0 340 76" role="img" aria-label="원래 삶 ${a.death.age}세, 바꾼 삶 ${b.death.age}세, ${ch.age}세에 갈라짐">${lifeBar('원래 삶', a, max, false, 16)}${lifeBar('바꾼 삶', b, max, true, 38)}<line x1="${fx.toFixed(1)}" x2="${fx.toFixed(1)}" y1="8" y2="58" stroke="var(--ink)" stroke-dasharray="3 3"/><text x="${fx.toFixed(1)}" y="71" font-size="10" fill="var(--soft)" text-anchor="${fx > 250 ? 'end' : 'start'}">${ch.age}세에 갈라짐</text></svg>`;
+
+  show(`
+    <section class="ending compare">
+      <p class="kicker">한 번의 선택</p>
+      <h1>${headline}</h1>
+      <p class="story">${esc(def.prompt)} 원래 삶의 답은 “${esc(optA.label)}”, 바꾼 삶의 답은 “${esc(optB.label)}”였습니다. ${sub}</p>
+      ${bars}
+      <div class="shares">
+        <div class="share"><b class="num">${a.death.age}세</b><span>원래 삶 · ${esc(CAUSE_LABEL[a.death.cause])}</span></div>
+        <div class="share choice"><b class="num">${b.death.age}세</b><span>바꾼 삶 · ${esc(CAUSE_LABEL[b.death.cause])}</span></div>
+      </div>
+
+      <div class="section">
+        <h2>갈라진 뒤의 두 삶</h2>
+        <p class="small">${ch.age > 0 ? `${ch.age}세 전까지는 두 삶이 같습니다. ` : ''}밝게 표시한 문장이 한쪽 삶에만 있는 일입니다.</p>
+        <ol class="pair">
+          <li class="head"><div></div><div>원래 삶</div><div>바꾼 삶</div></li>
+          ${rows}
+        </ol>
+      </div>
+
+      <div class="section">
+        <h2>바꾼 삶</h2>
+        <p class="story" style="margin-top:0">${summarySentences(b).map(esc).join(' ')}</p>
+      </div>
+
+      <div class="section">
+        <button class="btn primary" data-act="again">다시 태어나기</button>
+        <button class="btn" data-act="ending">원래 삶의 결말로</button>
+        <button class="btn ghost" data-act="home">처음으로</button>
+      </div>
+    </section>`);
+  app.querySelector('[data-act="again"]').onclick = () => begin(newSeed());
+  app.querySelector('[data-act="ending"]').onclick = renderEnding;
+  app.querySelector('[data-act="home"]').onclick = renderStart;
 }
 
 // ---------- 시작 ----------

@@ -227,7 +227,7 @@ export function timeline(life) {
   const rows = [];
   for (const entry of life.log) {
     const lines = yearLines(life, entry);
-    if (lines.length) rows.push({ age: entry.age, year: entry.year, lines });
+    if (lines.length) rows.push({ age: entry.age, year: entry.year, lines, choice: entry.choice ? entry.choice.id : null });
   }
   return rows;
 }

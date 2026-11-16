@@ -16,6 +16,23 @@ export function replayPlayer(world, defs, seed, choices, untilAge = Infinity) {
   return runToEnd(createLife(world, defs, { seed, universe: 0 }), replayDecider(choices), untilAge);
 }
 
+/**
+ * 되감기: 끝난 삶의 k번째 선택만 다른 옵션으로 바꾸고, 그 나이까지 재생한 삶을 돌려준다.
+ * 그 나이 이전의 선택은 그대로 재생하고, 이후의 선택은 플레이어가 다시 고른다. 운(난수)은 그대로다.
+ */
+export function branchLife(world, defs, seed, choices, k, option) {
+  const target = choices[k];
+  const kept = choices.slice(0, k).concat([{ ...target, option }]);
+  return runToEnd(createLife(world, defs, { seed, universe: 0 }), replayDecider(kept), target.age);
+}
+
+/** 두 선택 기록이 처음 갈라지는 위치. 같으면 -1 */
+export function firstDifference(a, b) {
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++) if (a[i].id !== b[i].id || a[i].option !== b[i].option) return i;
+  return a.length === b.length ? -1 : n;
+}
+
 /** 운의 몫: 0번 우주의 운은 그대로 두고 선택만 통계대로 골랐을 때의 삶 */
 export function luckOnlyLife(world, defs, seed) {
   return runToEnd(createLife(world, defs, { seed, universe: 0 }), policyDecide);

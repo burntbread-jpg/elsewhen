@@ -2,7 +2,7 @@
   "provenance": "선택지와 계수는 제작자가 정한 가정값이다. risk.rr 은 그 옵션을 고른 사람의 사망 위험이 고르지 않은 사람의 몇 배인지를 뜻한다. 엔진은 policy 비율로 평균이 1이 되도록 맞추므로, 전체 평균 수명은 통계표에서 벗어나지 않는다. policy 는 자동 우주가 첫 번째 옵션을 고를 확률이다.",
   "choices": [
     {
-      "id": "smoke-start", "area": "건강", "ages": [15, 22], "chance": 0.35,
+      "id": "smoke-start", "short": "권하는 담배", "area": "건강", "ages": [15, 22], "chance": 0.35,
       "when": [["smoking", "==", false]],
       "prompt": "또래들이 둘러앉아 담배를 권한다.",
       "options": [
@@ -13,7 +13,7 @@
       "policy": { "M": 0.42, "F": 0.08 }
     },
     {
-      "id": "smoke-quit", "area": "건강", "ages": [35, 55], "chance": 0.2,
+      "id": "smoke-quit", "short": "끊을까", "area": "건강", "ages": [35, 55], "chance": 0.2,
       "when": [["smoking", "==", true]],
       "prompt": "아침마다 기침이 길어진다. 담배를 끊을까.",
       "options": [
@@ -24,7 +24,7 @@
       "policy": 0.4
     },
     {
-      "id": "drink", "area": "건강", "ages": [20, 35], "chance": 0.2,
+      "id": "drink", "short": "이어지는 술자리", "area": "건강", "ages": [20, 35], "chance": 0.2,
       "when": [["drinking", "==", false]],
       "prompt": "일이 끝나면 술자리가 이어진다.",
       "options": [
@@ -35,7 +35,7 @@
       "policy": { "M": 0.3, "F": 0.1 }
     },
     {
-      "id": "exercise", "area": "건강", "ages": [30, 50], "chance": 0.15,
+      "id": "exercise", "short": "숨이 찬 계단", "area": "건강", "ages": [30, 50], "chance": 0.15,
       "when": [["exercise", "==", false]],
       "prompt": "계단을 오르면 숨이 찬다. 몸이 예전 같지 않다.",
       "options": [
@@ -46,7 +46,7 @@
       "policy": 0.3
     },
     {
-      "id": "checkup", "area": "건강", "ages": [45, 65], "chance": 0.15,
+      "id": "checkup", "short": "검진 권유", "area": "건강", "ages": [45, 65], "chance": 0.15,
       "when": [],
       "prompt": "건강검진을 받아 보라는 권유를 받았다.",
       "options": [
@@ -57,7 +57,7 @@
       "policy": { "dev": [0.15, 0.65] }
     },
     {
-      "id": "treat", "area": "위기", "ages": [12, 80], "chance": 1,
+      "id": "treat", "short": "낫지 않는 몸", "area": "위기", "ages": [12, 80], "chance": 1,
       "when": [["recentIll", "==", true]],
       "prompt": "몸이 좀처럼 낫지 않는다. 병원은 멀고 돈이 든다.",
       "options": [
@@ -68,7 +68,7 @@
       "policy": { "dev": [0.4, 0.92] }
     },
     {
-      "id": "hardship", "area": "위기", "ages": [10, 16], "chance": 0.3,
+      "id": "hardship", "short": "기운 살림", "area": "위기", "ages": [10, 16], "chance": 0.3,
       "when": [["inSchool", "==", true], ["wealth", "<=", 2]],
       "prompt": "집안 형편이 기울었다. 부모님은 말이 없다.",
       "options": [
@@ -78,7 +78,7 @@
       "policy": { "dev": [0.4, 0.97] }
     },
     {
-      "id": "lend", "area": "위기", "ages": [25, 50], "chance": 0.08,
+      "id": "lend", "short": "형제의 부탁", "area": "위기", "ages": [25, 50], "chance": 0.08,
       "when": [["employed", "==", true]],
       "prompt": "형제가 급히 돈을 빌려 달라고 한다.",
       "options": [
@@ -88,7 +88,7 @@
       "policy": 0.5
     },
     {
-      "id": "study", "area": "학업", "ages": [12, 15], "chance": 0.5,
+      "id": "study", "short": "시험 전날", "area": "학업", "ages": [12, 15], "chance": 0.5,
       "when": [["inSchool", "==", true]],
       "prompt": "시험이 다가온다. 친구들은 강가로 놀러 간다.",
       "options": [
@@ -98,7 +98,7 @@
       "policy": 0.5
     },
     {
-      "id": "tertiary", "area": "학업", "ages": [17, 17], "chance": 1,
+      "id": "tertiary", "short": "졸업 뒤", "area": "학업", "ages": [17, 17], "chance": 1,
       "when": [["inSchool", "==", true]],
       "prompt": "학교를 마치면 무엇을 할지 정해야 한다.",
       "options": [
@@ -108,7 +108,7 @@
       "policy": { "dev": [0.35, 0.75] }
     },
     {
-      "id": "night-school", "area": "학업", "ages": [22, 35], "chance": 0.15,
+      "id": "night-school", "short": "야간 학교", "area": "학업", "ages": [22, 35], "chance": 0.15,
       "when": [["employed", "==", true], ["eduLevel", "<=", 2]],
       "prompt": "일을 마친 뒤 다닐 수 있는 야간 학교가 생겼다.",
       "options": [
@@ -118,7 +118,7 @@
       "policy": 0.2
     },
     {
-      "id": "city-job", "area": "일", "ages": [16, 30], "chance": 0.25,
+      "id": "city-job", "short": "도시의 일자리", "area": "일", "ages": [16, 30], "chance": 0.25,
       "when": [["urban", "==", false], ["inSchool", "==", false]],
       "prompt": "도시의 공장에서 사람을 구한다는 소문이 돈다.",
       "options": [
@@ -128,7 +128,7 @@
       "policy": 0.4
     },
     {
-      "id": "business", "area": "일", "ages": [28, 45], "chance": 0.12,
+      "id": "business", "short": "내 가게", "area": "일", "ages": [28, 45], "chance": 0.12,
       "when": [["employed", "==", true], ["jobType", "!=", "business"]],
       "prompt": "모아 둔 돈으로 내 가게를 열 기회가 왔다.",
       "options": [
@@ -138,7 +138,7 @@
       "policy": 0.15
     },
     {
-      "id": "overwork", "area": "일", "ages": [30, 45], "chance": 0.15,
+      "id": "overwork", "short": "큰 자리", "area": "일", "ages": [30, 45], "chance": 0.15,
       "when": [["employed", "==", true], ["jobType", "in", ["office", "professional", "labor"]]],
       "prompt": "책임이 큰 자리가 났다. 맡으면 집에 있는 시간이 줄어든다.",
       "options": [
@@ -149,7 +149,7 @@
       "policy": 0.5
     },
     {
-      "id": "retire", "area": "일", "ages": [58, 63], "chance": 0.3,
+      "id": "retire", "short": "내려놓을 나이", "area": "일", "ages": [58, 63], "chance": 0.3,
       "when": [["employed", "==", true]],
       "prompt": "이제 일을 내려놓을 수도 있는 나이다.",
       "options": [
@@ -159,7 +159,7 @@
       "policy": { "dev": [0.2, 0.6] }
     },
     {
-      "id": "proposal", "area": "관계", "ages": [18, 32], "chance": 0.1,
+      "id": "proposal", "short": "함께 살자는 말", "area": "관계", "ages": [18, 32], "chance": 0.1,
       "when": [["hasPartner", "==", false], ["inSchool", "==", false]],
       "prompt": "오래 알고 지낸 사람이 함께 살자고 한다.",
       "options": [
@@ -169,7 +169,7 @@
       "policy": 0.6
     },
     {
-      "id": "more-children", "area": "관계", "ages": [22, 40], "chance": 0.2,
+      "id": "more-children", "short": "아이를 더", "area": "관계", "ages": [22, 40], "chance": 0.2,
       "when": [["hasPartner", "==", true], ["kids", ">=", 1]],
       "prompt": "아이를 더 가질지 이야기가 나왔다.",
       "options": [
@@ -179,7 +179,7 @@
       "policy": { "tfr": 3.5 }
     },
     {
-      "id": "care-parent", "area": "관계", "ages": [35, 60], "chance": 0.1,
+      "id": "care-parent", "short": "혼자가 된 부모", "area": "관계", "ages": [35, 60], "chance": 0.1,
       "when": [["parentAlive", "==", true], ["employed", "==", true]],
       "prompt": "부모님이 혼자 지내기 어려워졌다.",
       "options": [
@@ -189,7 +189,7 @@
       "policy": { "dev": [0.75, 0.35] }
     },
     {
-      "id": "emigrate", "area": "이주", "ages": [20, 40], "chance": 0.04,
+      "id": "emigrate", "short": "먼 나라의 일", "area": "이주", "ages": [20, 40], "chance": 0.04,
       "when": [["migrated", "==", false], ["dev", "<", 0.8], ["inSchool", "==", false]],
       "prompt": "먼 나라에서 일할 사람을 구한다고 한다.",
       "options": [
@@ -199,7 +199,7 @@
       "policy": 0.08
     },
     {
-      "id": "return-home", "area": "이주", "ages": [25, 70], "chance": 0.15,
+      "id": "return-home", "short": "돌아오라는 편지", "area": "이주", "ages": [25, 70], "chance": 0.15,
       "when": [["migrated", "==", true], ["yearsAbroad", ">=", 5]],
       "prompt": "고향에서 돌아오라는 편지가 왔다.",
       "options": [
